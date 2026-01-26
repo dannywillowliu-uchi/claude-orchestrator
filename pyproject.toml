@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-orchestrator"
+version = "0.1.0"
+description = "Orchestration system for Claude Code enabling autonomous multi-step task execution with human oversight"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+	{name = "Danny Willow Liu"}
+]
+keywords = ["claude", "orchestration", "automation", "mcp", "ai"]
+classifiers = [
+	"Development Status :: 3 - Alpha",
+	"Intended Audience :: Developers",
+	"License :: OSI Approved :: MIT License",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+	"anthropic>=0.40.0",
+	"pydantic>=2.0.0",
+	"aiosqlite>=0.19.0",
+	"rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+	"pytest>=7.0.0",
+	"pytest-asyncio>=0.21.0",
+	"ruff>=0.1.0",
+	"mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dannywillowliu-uchi/claude-orchestrator"
+Repository = "https://github.com/dannywillowliu-uchi/claude-orchestrator"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
