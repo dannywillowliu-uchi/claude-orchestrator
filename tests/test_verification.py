@@ -7,19 +7,20 @@ Tests:
 - Custom verification commands
 """
 
-import pytest
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from claude_orchestrator.orchestrator.verifier import (
-	Verifier,
-	CheckStatus,
 	CheckResult,
+	CheckStatus,
 	VerificationResult,
+	Verifier,
 )
 
 
