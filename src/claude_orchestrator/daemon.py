@@ -13,26 +13,45 @@ Run with: python -m claude_orchestrator.daemon
 Or as a launchd service for auto-start on login.
 """
 
-import os
-import sys
-import json
 import asyncio
-import subprocess
-import signal
+import json
 import logging
+import os
+import signal
+import sys
+from dataclasses import dataclass
 from pathlib import Path
-from datetime import datetime
 from typing import Optional
-from dataclasses import dataclass, asdict
 
 from dotenv import load_dotenv
 
-from .database import Database, TaskRecord, TaskStatus
-from .google_tasks import GoogleTasksClient
-from .telegram_bot import TelegramBot, ApprovalStatus, ApprovalResponse
 from .analyzer import TaskAnalyzer
-from .gmail_client import GmailClient
-from .calendar_client import CalendarClient
+from .database import Database, TaskRecord, TaskStatus
+
+# Optional integrations - daemon degrades gracefully without these
+try:
+	from .google_tasks import GoogleTasksClient
+	HAS_GOOGLE_TASKS = True
+except ImportError:
+	HAS_GOOGLE_TASKS = False
+
+try:
+	from .telegram_bot import ApprovalResponse, ApprovalStatus, TelegramBot
+	HAS_TELEGRAM = True
+except ImportError:
+	HAS_TELEGRAM = False
+
+try:
+	from .gmail_client import GmailClient
+	HAS_GMAIL = True
+except ImportError:
+	HAS_GMAIL = False
+
+try:
+	from .calendar_client import CalendarClient
+	HAS_CALENDAR = True
+except ImportError:
+	HAS_CALENDAR = False
 
 # Setup logging
 logging.basicConfig(
