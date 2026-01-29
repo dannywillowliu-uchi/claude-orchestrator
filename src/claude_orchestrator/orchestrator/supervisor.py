@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, Callable, Awaitable
 
+from ..hooks import HooksConfig, generate_hooks_for_task
 from .delegator import TaskDelegator, DelegatedTask, DelegationStatus
 
 logger = logging.getLogger(__name__)
@@ -395,3 +396,7 @@ class Supervisor:
 		if state:
 			return state.last_checkpoint
 		return None
+
+	def select_hooks_profile(self, task_description: str) -> HooksConfig:
+		"""Select the appropriate hooks profile for a task description."""
+		return generate_hooks_for_task(task_description)

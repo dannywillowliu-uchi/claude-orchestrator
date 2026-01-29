@@ -16,7 +16,10 @@ import logging
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Awaitable, Callable, List, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, List, Optional
+
+if TYPE_CHECKING:
+	from .hooks import HooksConfig
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +110,13 @@ class ClaudeCLIBridge:
 		on_output: Optional[Callable[[CLIOutput], Awaitable[None]]] = None,
 		on_permission: Optional[Callable[[str], Awaitable[bool]]] = None,
 		on_startup_message: Optional[Callable[[str], Awaitable[None]]] = None,
+		hooks_config: Optional["HooksConfig"] = None,
 	):
 		self.project_path = os.path.expanduser(project_path)
 		self.on_output = on_output
 		self.on_permission = on_permission  # Not used in print mode
 		self.on_startup_message = on_startup_message
+		self.hooks_config = hooks_config
 		self._api_key = _get_api_key()
 		self._ready = False
 		self._startup_buffer: List[str] = []
@@ -199,14 +204,23 @@ class ClaudeCLIBridge:
 			if self._api_key:
 				env["ANTHROPIC_API_KEY"] = self._api_key
 
+			# Build CLI args based on hooks config
+			cli_args = ["claude", "--print", "--model", "opus"]
+
+			if self.hooks_config and not self.hooks_config.is_full_access:
+				# Use targeted --allowedTools instead of blanket skip
+				allowed = self.hooks_config.to_allowed_tools_list()
+				for tool in allowed:
+					cli_args.extend(["--allowedTools", tool])
+			else:
+				# Full access or no config: use --dangerously-skip-permissions
+				cli_args.append("--dangerously-skip-permissions")
+
+			cli_args.append(prompt)
+
 			# Run claude --print with the prompt
-			# --dangerously-skip-permissions allows tool execution without interactive prompts
 			process = await asyncio.create_subprocess_exec(
-				"claude",
-				"--print",
-				"--model", "opus",
-				"--dangerously-skip-permissions",
-				prompt,
+				*cli_args,
 				stdout=asyncio.subprocess.PIPE,
 				stderr=asyncio.subprocess.PIPE,
 				cwd=self.project_path,
