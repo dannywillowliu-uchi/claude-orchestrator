@@ -233,22 +233,14 @@ class ExecutionDriver:
         """Try to infer the working directory from the task."""
         text = f"{task.title} {task.notes or ''}".lower()
 
-        # Check for project mentions
-        project_keywords = {
-            "mlb": "mlb_kalshi",
-            "kalshi": "mlb_kalshi",
-            "trading": "self_learning_trading_agent",
-            "health": "apple-health-dashboard",
-            "blockchain": "blockchain network valuation",
-            "resume": "latex-resume-mcp-public",
-            "task automation": "task-automation-mcp",
-        }
-
-        for keyword, project in project_keywords.items():
-            if keyword in text:
-                project_path = self.projects_path / project
-                if project_path.exists():
-                    return project_path
+        # Try to match a subdirectory by keyword
+        for item in self.projects_path.iterdir():
+            if not item.is_dir() or item.name.startswith("."):
+                continue
+            # Match if any word from the task text appears in the directory name
+            dir_words = set(item.name.lower().replace("-", " ").replace("_", " ").split())
+            if dir_words & set(text.split()):
+                return item
 
         # Default to projects root
         return self.projects_path

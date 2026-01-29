@@ -15,7 +15,7 @@ class ProjectInfo:
     path: str
     description: str
     technologies: list[str] = field(default_factory=list)
-    aliases: list[str] = field(default_factory=list)  # e.g., ["mlb", "kalshi"] for mlb_kalshi
+    aliases: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -33,8 +33,8 @@ class PersonalContext:
     })
 
     communication_style: dict = field(default_factory=lambda: {
-        "tone": "professional but friendly",
-        "email_signature": "Best,\nDanny",
+        "tone": "professional",
+        "email_signature": "",
     })
 
     # Projects registry
@@ -117,45 +117,6 @@ class ContextManager:
         if not projects_path.exists():
             return projects
 
-        # Known project configurations
-        known_projects = {
-            "mlb_kalshi": {
-                "description": "High-frequency trading system for Kalshi MLB prediction markets",
-                "technologies": ["Python", "Flask", "Kalshi API"],
-                "aliases": ["mlb", "kalshi", "trading"],
-            },
-            "self_learning_trading_agent": {
-                "description": "Self-evolving trading bot using Claude LLM for strategy generation",
-                "technologies": ["Python", "Flask", "Anthropic API", "Kalshi"],
-                "aliases": ["trading agent", "self learning", "llm trading"],
-            },
-            "apple-health-dashboard": {
-                "description": "Privacy-focused local health data analyzer for Apple Health + Oura",
-                "technologies": ["Python", "Flask", "pandas", "matplotlib"],
-                "aliases": ["health", "apple health", "oura"],
-            },
-            "blockchain network valuation": {
-                "description": "Network effects analyzer using Metcalfe's Law for blockchain valuation",
-                "technologies": ["Python", "Jupyter", "pandas", "scipy"],
-                "aliases": ["blockchain", "crypto", "metcalfe"],
-            },
-            "task-automation-mcp": {
-                "description": "MCP server for Google Tasks automation with Claude Code",
-                "technologies": ["Python", "MCP", "Google APIs", "Telegram"],
-                "aliases": ["task automation", "mcp", "google tasks"],
-            },
-            "personal-projects-mcp": {
-                "description": "MCP server exposing personal projects to Claude for resume updates",
-                "technologies": ["Python", "MCP", "LaTeX"],
-                "aliases": ["projects mcp", "resume"],
-            },
-            "latex-resume-mcp-public": {
-                "description": "MCP server for creating and compiling LaTeX resumes",
-                "technologies": ["Python", "MCP", "LaTeX", "pdflatex"],
-                "aliases": ["resume", "latex", "cv"],
-            },
-        }
-
         # Scan projects directory
         for item in projects_path.iterdir():
             if not item.is_dir():
@@ -163,15 +124,10 @@ class ContextManager:
             if item.name.startswith(".") or item.name in ["venv", "__pycache__", "node_modules"]:
                 continue
 
-            name = item.name
-            known = known_projects.get(name, {})
-
             projects.append(ProjectInfo(
-                name=name,
+                name=item.name,
                 path=str(item),
-                description=known.get("description", f"Project: {name}"),
-                technologies=known.get("technologies", []),
-                aliases=known.get("aliases", []),
+                description=f"Project: {item.name}",
             ))
 
         return projects

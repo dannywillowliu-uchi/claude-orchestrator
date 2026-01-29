@@ -99,7 +99,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 	if not toml_path.exists():
 		toml_path.write_text(
 			'# claude-orchestrator configuration\n'
-			'# See: https://github.com/dannywillowliu-uchi/claude-orchestrator\n'
+			'# See: https://github.com/YOUR_USERNAME/claude-orchestrator\n'
 			'\n'
 			'# projects_path = "~/personal_projects"\n'
 		)

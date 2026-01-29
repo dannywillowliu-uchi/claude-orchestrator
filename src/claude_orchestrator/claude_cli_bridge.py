@@ -16,21 +16,23 @@ import logging
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Optional, Callable, Awaitable, List
+from typing import Awaitable, Callable, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Load API key from secrets
-SECRETS_PATH = Path.home() / "personal_projects" / ".secrets.json"
-
-
 def _get_api_key() -> str:
-	"""Load API key from secrets file."""
-	if SECRETS_PATH.exists():
-		with open(SECRETS_PATH) as f:
-			secrets = json.load(f)
-			return secrets.get("keys", {}).get("ANTHROPIC_API_KEY", "")
+	"""Load API key from secrets file or environment."""
+	try:
+		from .config import get_config
+		secrets_path = get_config().secrets_file
+		if secrets_path.exists():
+			with open(secrets_path) as f:
+				secrets = json.load(f)
+				key = secrets.get("keys", {}).get("ANTHROPIC_API_KEY", "")
+				if key:
+					return key
+	except Exception:
+		pass
 	return os.environ.get("ANTHROPIC_API_KEY", "")
 
 
@@ -146,7 +148,7 @@ class ClaudeCLIBridge:
 		# If initial prompt provided, run it
 		if initial_prompt:
 			try:
-				await self._notify_startup(f"Running initial prompt...")
+				await self._notify_startup("Running initial prompt...")
 				response = await self.send_prompt(initial_prompt, timeout=timeout)
 				await self._notify_startup(f"Initial prompt complete ({len(response)} chars)")
 			except Exception as e:

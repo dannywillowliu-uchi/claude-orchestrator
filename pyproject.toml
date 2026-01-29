@@ -9,9 +9,7 @@ description = "MCP server for Claude Code: planning, verification, TDD, and prog
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-authors = [
-	{name = "Danny Willow Liu"}
-]
+authors = []
 keywords = ["claude", "mcp", "planning", "verification", "developer-tools"]
 classifiers = [
 	"Development Status :: 3 - Alpha",
@@ -56,9 +54,9 @@ dev = [
 [project.scripts]
 claude-orchestrator = "claude_orchestrator.cli:main"
 
-[project.urls]
-Homepage = "https://github.com/dannywillowliu-uchi/claude-orchestrator"
-Repository = "https://github.com/dannywillowliu-uchi/claude-orchestrator"
+# [project.urls]
+# Homepage = "https://github.com/YOUR_USERNAME/claude-orchestrator"
+# Repository = "https://github.com/YOUR_USERNAME/claude-orchestrator"
 
 [tool.setuptools.packages.find]
 where = ["src"]

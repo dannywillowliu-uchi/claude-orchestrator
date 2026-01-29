@@ -204,7 +204,7 @@ def log_global_learning(
 
 	# Map category to section
 	section_map = {
-		"preference": "## Danny's Preferences",
+		"preference": "## User Preferences",
 		"pattern": "## Technical Patterns That Work",
 		"gotcha": "## Common Gotchas Across Projects",
 		"decision": "## Decision Patterns",
