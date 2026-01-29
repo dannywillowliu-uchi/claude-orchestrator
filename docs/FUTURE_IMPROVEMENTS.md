@@ -2,188 +2,127 @@
 
 Features to implement after the core enhancement set (1-7) is complete.
 
----
-
-## Feature 8: Knowledge Base Integration (SDK Docs)
-
-### Description
-Seed the existing knowledge base infrastructure with Claude SDK and MCP documentation.
-
-### Current State
-- `src/knowledge/crawler.py` - Fully functional web crawler
-- `src/knowledge/indexer.py` - LanceDB-based document indexer
-- `src/knowledge/retriever.py` - Semantic search MCP tool
-
-### Implementation
-```python
-# Crawl and index Anthropic docs
-crawler = DocCrawler()
-await crawler.crawl_site("https://docs.anthropic.com/", "data/knowledge/claude-sdk")
-
-indexer = DocIndexer("data/docs_index")
-await indexer.index_directory("data/knowledge/claude-sdk", source_name="claude-sdk")
-```
-
-### Docs to Crawl
-- `https://docs.anthropic.com/` - Claude API documentation
-- `https://modelcontextprotocol.io/` - MCP specification
-- `https://github.com/anthropics/anthropic-cookbook` - Code examples
-
-### Effort
-Low - infrastructure exists, just needs data seeding
+**Last updated**: 2026-01-28
 
 ---
 
-## Feature 9: Enhanced Hooks Integration
+## Status Overview
 
-### Description
-Generate task-specific permission hooks instead of using `--dangerously-skip-permissions`.
-
-### Current State
-- Basic auto-approve/escalate in supervisor
-- Security module with path validation
-
-### Implementation
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {"matcher": "Edit", "action": "allow"},
-      {"matcher": "Bash(pytest:*)", "action": "allow"},
-      {"matcher": "Bash(git:*)", "action": "require_approval"}
-    ]
-  }
-}
-```
-
-### Files to Modify
-- `src/orchestrator/supervisor.py` - Generate task-specific hooks
-- `src/security.py` - Hook configuration builder
-
-### Effort
-Medium
+| Feature | Status | Notes |
+|---------|--------|-------|
+| 8. Knowledge Base Seeding | **Done** | CLI `seed-docs` command, setup wizard integration |
+| 9. Enhanced Hooks | **Done** | `hooks.py` with 4 profiles, bridge + supervisor integration |
+| 10. Structured Output | **Done (scaffold)** | `schemas.py` with validation, bridge `--output-format json` stub |
+| 11. Batch Processing | **Done** | `batch.py` with semaphore concurrency, full test coverage |
+| 12. Codebase Onboarding | **Done (scaffold)** | `onboarding.py` with heuristic detection, AST/prompt stubs |
 
 ---
 
-## Feature 10: Structured Output Validation
+## Feature 8: Knowledge Base Integration (SDK Docs) -- DONE
 
-### Description
-Use JSON schemas to validate Claude responses for consistent parsing.
+### What was built
+- `claude-orchestrator seed-docs` CLI command with `--source` flag
+- `DEFAULT_SEED_SOURCES`: anthropic-docs (100 pages), mcp-docs (50 pages)
+- Setup wizard step 4/5 prompts for knowledge base seeding
+- Graceful handling when `[knowledge]` extras are not installed
 
-### Current State
-- Pydantic models for plans
-- Free-form text responses from tasks
-
-### Implementation
-```python
-response = await bridge.send_prompt(
-    prompt,
-    json_schema={
-        "type": "object",
-        "properties": {
-            "files_modified": {"type": "array"},
-            "summary": {"type": "string"},
-            "tests_passed": {"type": "boolean"}
-        }
-    }
-)
-```
-
-### Files to Modify
-- `src/claude_cli_bridge.py` - Add `--json-schema` flag support
-- `src/orchestrator/delegator.py` - Define schemas per task type
-
-### Effort
-Medium
+### Remaining work
+- Add more default sources (anthropic-cookbook, etc.)
+- Auto-re-index on schedule
+- Cache invalidation for stale docs
 
 ---
 
-## Feature 11: Batch Processing / Fan-Out
+## Feature 9: Enhanced Hooks Integration -- DONE
 
-### Description
-Process large sets of similar tasks in parallel with rate limiting.
+### What was built
+- `src/claude_orchestrator/hooks.py` with `HooksConfig` dataclass
+- 4 predefined profiles: `read_only`, `code_edit`, `test_run`, `full_access`
+- Keyword-based `generate_hooks_for_task()` for automatic profile selection
+- Bridge uses `--allowedTools` instead of `--dangerously-skip-permissions` for non-full-access profiles
+- Supervisor has `select_hooks_profile()` method
 
-### Use Cases
-- Migrate 50 files to new API
-- Fix lint errors across codebase
-- Update all test files
-
-### Implementation
-```python
-class BatchProcessor:
-    async def process_batch(
-        self,
-        items: list[str],
-        task_template: str,
-        max_concurrent: int = 5
-    ) -> list[BatchResult]:
-        """Process items in parallel with rate limiting."""
-        semaphore = asyncio.Semaphore(max_concurrent)
-        tasks = [self._process_one(item, task_template, semaphore) for item in items]
-        return await asyncio.gather(*tasks)
-```
-
-### Files to Create
-- `src/orchestrator/batch.py` - Batch processor with fan-out/fan-in
-
-### Effort
-Medium
+### Remaining work
+- Per-command Bash pattern matching (e.g., allow `pytest` but deny `rm -rf`)
+- User-configurable profiles
+- Profile override via plan task metadata
 
 ---
 
-## Feature 12: Codebase Onboarding Mode
+## Feature 10: Structured Output Validation -- SCAFFOLD
 
-### Description
-Automated exploration and documentation of unfamiliar codebases.
+### What was built
+- `src/claude_orchestrator/schemas.py` with `ResponseSchema` dataclass
+- JSON type validation (string, integer, boolean, array, object)
+- Required key enforcement
+- Predefined schemas: `CODE_REVIEW_SCHEMA`, `TASK_RESULT_SCHEMA`, `PLAN_SCHEMA`
+- Bridge adds `--output-format json` when schema is provided
+- Best-effort validation (logs warning, returns raw response on mismatch)
 
-### Use Cases
-- New developer joining project
-- Understanding legacy codebase
-- Architecture documentation
+### Remaining work
+- Nested object validation
+- Array item type validation
+- Schema-per-task-type in delegator
+- Retry on validation failure (re-prompt with "respond as valid JSON")
 
-### Implementation
-```python
-await orchestrator.onboard_codebase(
-    project_path="./my-project",
-    questions=[
-        "How does authentication work?",
-        "What design patterns are used?",
-        "What's the testing strategy?",
-        "Where are the main entry points?"
-    ]
-)
-# Generates ONBOARDING.md with answers
-```
+---
 
-### Files to Create
-- `src/orchestrator/onboarding.py` - Codebase explorer
-- Templates for common onboarding questions
+## Feature 11: Batch Processing / Fan-Out -- DONE
 
-### Techniques
-- AST parsing for code structure
+### What was built
+- `src/claude_orchestrator/orchestrator/batch.py`
+- `BatchProcessor` with `asyncio.Semaphore` concurrency control
+- `BatchItem`, `BatchResult`, `BatchSummary` dataclasses
+- Individual failure isolation (one item failing doesn't abort batch)
+- `on_item_complete` callback per item
+- `BatchSummary.success_rate` property
+
+### Remaining work
+- Wire into MCP tools (expose as `batch_process` tool)
+- Integrate with delegator for plan-based batch execution
+- Priority ordering (process high-priority items first)
+- Retry failed items with exponential backoff
+
+---
+
+## Feature 12: Codebase Onboarding Mode -- SCAFFOLD
+
+### What was built
+- `src/claude_orchestrator/orchestrator/onboarding.py`
+- `ProjectProfile` dataclass with detected attributes
+- `CodebaseOnboarder.analyze_project()` -- working heuristics:
+  - Language detection (Python, JS, TS, Rust, Go, Java, Ruby, C, C++)
+  - Entry point detection (main.py, index.js, app.py, etc.)
+  - Key file detection (README, pyproject.toml, Dockerfile, CI configs)
+  - Test detection (tests/ directory, test_*.py, *.test.js)
+  - CI detection (GitHub Actions, GitLab CI, CircleCI, Jenkins)
+  - Docker detection
+  - File/directory counting
+
+### Remaining work
+- `generate_ast_summary()` -- parse source files for class/function signatures
+- `generate_onboarding_prompt()` -- combine profile + AST + docs into Claude prompt
 - Dependency graph generation
-- Entry point detection
 - Test coverage analysis
-
-### Effort
-High
+- Wire into MCP tools (expose as `onboard_project` tool)
+- Generate ONBOARDING.md output file
 
 ---
 
-## Priority Matrix
+## Next Priority: Deeper Integration
 
-| Feature | Effort | Impact | Priority |
-|---------|--------|--------|----------|
-| 8. Knowledge Base | Low | High | P1 |
-| 10. Structured Output | Medium | High | P2 |
-| 9. Hooks Integration | Medium | Medium | P3 |
-| 11. Batch Processing | Medium | Medium | P3 |
-| 12. Codebase Onboarding | High | Medium | P4 |
+Now that scaffolds exist for all 5 features, the next priorities are:
+
+1. **Wire batch processing into MCP tools** -- expose as a tool Claude can call
+2. **Implement AST summary for onboarding** -- Python AST parsing first, then JS/TS
+3. **Add nested schema validation** -- needed for real-world structured output
+4. **Per-command Bash hooks** -- granular control over what shell commands subagents can run
+5. **Auto-re-index knowledge base** -- detect stale docs and re-crawl
 
 ---
 
 ## Dependencies
 
-All features require core enhancement set (1-7) to be complete first.
+All features require core enhancement set (1-7) to be complete first. (Done.)
 
-Feature 8 (Knowledge Base) can be implemented independently at any time.
+Features 8-12 are now all implemented at minimum scaffold level. Further deepening can happen in any order.
