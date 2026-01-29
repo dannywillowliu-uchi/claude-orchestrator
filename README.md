@@ -19,11 +19,48 @@ The net effect: you describe what you want, approve a plan, and Claude executes 
 ## Quick Start
 
 ```bash
-pip install claude-orchestrator
+# 1. Install
+pip install claude-orchestrator          # core only
+pip install claude-orchestrator[all]     # all optional modules (recommended)
+
+# 2. Run setup wizard
 claude-orchestrator setup
+
+# 3. Verify installation
+claude-orchestrator doctor
 ```
 
-The setup wizard creates config directories, writes a default config, and offers to inject the MCP server entry into Claude Code and/or Claude Desktop.
+The setup wizard creates config directories, writes a default config, injects the MCP server entry into Claude Code / Claude Desktop, and runs a health check to verify everything works.
+
+### First Steps After Setup
+
+1. **Restart Claude Code** (or Claude Desktop) to load the new MCP server.
+2. In Claude Code, try: *"Use the health_check tool to verify the orchestrator is running."*
+3. Start a planning session: *"Start a planning session for my project."*
+4. If you installed knowledge extras, seed the docs: `claude-orchestrator seed-docs`
+
+## Optional Extras
+
+The core package covers planning, verification, memory, secrets, and GitHub integration. Optional extras add more capabilities:
+
+| Extra | Install | What It Adds |
+|-------|---------|--------------|
+| `visual` | `pip install claude-orchestrator[visual]` | Screenshot capture, element verification, page content extraction (via Playwright) |
+| `knowledge` | `pip install claude-orchestrator[knowledge]` | Semantic doc search, documentation crawling & indexing (via LanceDB + sentence-transformers) |
+| `web` | `pip install claude-orchestrator[web]` | Web dashboard for observability (via Starlette + Uvicorn) |
+| `all` | `pip install claude-orchestrator[all]` | All of the above |
+
+When an extra is not installed, its tools still appear in the MCP server as stubs. Calling a stub returns a JSON error with the exact `pip install` command needed:
+
+```json
+{
+  "error": "missing_dependency",
+  "tool": "take_screenshot",
+  "extra": "visual",
+  "install": "pip install claude-orchestrator[visual]",
+  "message": "This tool requires the 'visual' extras. Install with: pip install claude-orchestrator[visual]"
+}
+```
 
 ## What You Get
 
@@ -68,6 +105,8 @@ If you prefer not to use the setup wizard:
 
 3. Restart Claude Code.
 
+4. Verify: `claude-orchestrator doctor`
+
 ## Configuration
 
 Config file location:
@@ -90,7 +129,10 @@ Environment variable overrides (`CLAUDE_ORCHESTRATOR_*`):
 claude-orchestrator setup          # Interactive setup wizard
 claude-orchestrator setup --check  # Verify current config
 claude-orchestrator serve          # Run MCP server (used by Claude)
-claude-orchestrator doctor         # Health check
+claude-orchestrator doctor         # Health check (exits non-zero on issues)
+claude-orchestrator seed-docs      # Seed knowledge base with documentation
+claude-orchestrator viz dashboard  # Terminal dashboard for observability
+claude-orchestrator viz web        # Web dashboard (requires web extras)
 ```
 
 ## Tools
@@ -109,6 +151,35 @@ claude-orchestrator doctor         # Health check
 | Sessions | `list_claude_sessions`, `start_claude_session`, `stop_claude_session`, `send_to_claude_session`, `get_session_output`, `approve_session_action` |
 | Visual | `take_screenshot`, `take_element_screenshot`, `verify_element`, `get_page_content`, `list_screenshots`, `delete_screenshot` |
 | Knowledge | `search_docs`, `get_doc`, `list_doc_sources`, `index_docs`, `crawl_and_index_docs` |
+
+## Troubleshooting
+
+### Tools not appearing in Claude Code
+
+1. Make sure the MCP config is set up: `claude-orchestrator setup --check`
+2. Restart Claude Code after adding the MCP entry.
+3. Run `claude-orchestrator doctor` to check for server startup issues.
+
+### `missing_dependency` error from a tool
+
+This means you called a tool that requires an optional extra. The error JSON includes the install command:
+
+```bash
+pip install claude-orchestrator[visual]      # for visual tools
+pip install claude-orchestrator[knowledge]   # for knowledge tools
+pip install claude-orchestrator[all]         # for everything
+```
+
+### Server won't start
+
+Run `claude-orchestrator doctor` to diagnose. Common causes:
+- Missing core dependency (check the "Core deps" section of doctor output)
+- Corrupt `config.toml` (doctor validates TOML syntax)
+- Corrupt `secrets.json` (doctor validates JSON structure)
+
+### `claude-orchestrator doctor` exits with code 1
+
+This means one or more checks failed. Review the issue list at the bottom of the output and fix each one. Re-run doctor until all checks pass.
 
 ## Development
 
