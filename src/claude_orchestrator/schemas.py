@@ -170,7 +170,9 @@ def get_schema(name: str) -> Optional[ResponseSchema]:
 	return _SCHEMAS.get(name)
 
 
-def validate_response(response_str: str, schema: ResponseSchema) -> tuple[bool, Optional[dict[str, Any]], Optional[str]]:
+def validate_response(
+	response_str: str, schema: ResponseSchema,
+) -> tuple[bool, Optional[dict[str, Any]], Optional[str]]:
 	"""
 	Validate a response string against a schema.
 

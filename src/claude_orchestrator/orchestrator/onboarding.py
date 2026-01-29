@@ -125,14 +125,18 @@ class CodebaseOnboarder:
 		# Count files and directories (top-level, skip hidden)
 		profile.file_count = sum(
 			1 for f in project_path.rglob("*")
-			if f.is_file() and not any(p.name.startswith(".") for p in f.relative_to(project_path).parents if p != Path("."))
+			if f.is_file()
+			and not any(
+				p.name.startswith(".") for p in f.relative_to(project_path).parents if p != Path(".")
+			)
 		)
 		profile.directory_count = sum(
 			1 for d in project_path.rglob("*")
 			if d.is_dir() and not d.name.startswith(".")
 		)
 
-		logger.info(f"Analyzed project: {profile.name} ({profile.primary_language or 'unknown'}, {profile.file_count} files)")
+		lang = profile.primary_language or "unknown"
+		logger.info(f"Analyzed project: {profile.name} ({lang}, {profile.file_count} files)")
 
 		return profile
 
@@ -157,7 +161,8 @@ class CodebaseOnboarder:
 			for match in path.rglob(pattern):
 				# Skip files in hidden dirs, node_modules, venvs
 				rel = str(match.relative_to(path))
-				if not any(part.startswith(".") or part in ("node_modules", "venv", ".venv", "__pycache__") for part in rel.split("/")):
+				skip_dirs = ("node_modules", "venv", ".venv", "__pycache__")
+				if not any(part.startswith(".") or part in skip_dirs for part in rel.split("/")):
 					found.append(rel)
 		return sorted(found)
 
