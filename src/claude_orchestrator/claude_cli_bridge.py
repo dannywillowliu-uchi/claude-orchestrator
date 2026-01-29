@@ -136,14 +136,11 @@ class ClaudeCLIBridge:
 				message=f"Directory not found: {self.project_path}"
 			)
 
-		if not self._api_key:
-			return StartupResult(
-				success=False,
-				message="No API key found. Set ANTHROPIC_API_KEY or add to ~/.secrets.json"
-			)
-
 		await self._notify_startup(f"Claude CLI Bridge initialized for: {self.project_path}")
-		await self._notify_startup("Using --print mode with API key")
+		if self._api_key:
+			await self._notify_startup("Using --print mode with API key override")
+		else:
+			await self._notify_startup("Using --print mode (Claude CLI handles auth)")
 
 		# If initial prompt provided, run it
 		if initial_prompt:
@@ -194,17 +191,15 @@ class ClaudeCLIBridge:
 			CLITimeoutError: If response times out
 			CLIBridgeError: If execution fails
 		"""
-		if not self._api_key:
-			raise CLIBridgeError("No API key configured")
-
 		logger.info(f"Sending prompt ({len(prompt)} chars): {prompt[:100]}...")
 
 		try:
-			# Build environment with API key
+			# Build environment, injecting API key if available
 			env = os.environ.copy()
-			env["ANTHROPIC_API_KEY"] = self._api_key
+			if self._api_key:
+				env["ANTHROPIC_API_KEY"] = self._api_key
 
-			# Run claude --print with the prompt, using Opus 4.5
+			# Run claude --print with the prompt
 			# --dangerously-skip-permissions allows tool execution without interactive prompts
 			process = await asyncio.create_subprocess_exec(
 				"claude",
@@ -273,4 +268,4 @@ class ClaudeCLIBridge:
 	@property
 	def is_ready(self) -> bool:
 		"""Check if bridge is ready for prompts."""
-		return self._ready and bool(self._api_key)
+		return self._ready
