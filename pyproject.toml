@@ -28,6 +28,7 @@ dependencies = [
 	"platformdirs>=4.0.0",
 	"pexpect>=4.8.0",
 	"PyGithub>=2.0.0",
+	"rich>=13.0.0",
 ]
 
 [project.optional-dependencies]

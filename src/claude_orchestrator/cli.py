@@ -1,15 +1,16 @@
-"""CLI for claude-orchestrator: setup, serve, doctor, and seed-docs commands."""
+"""CLI for claude-orchestrator: setup, serve, doctor, seed-docs, and viz commands."""
 
 import argparse
 import asyncio
 import json
 import os
 import platform
+import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .config import load_config
-
 
 DEFAULT_SEED_SOURCES = [
 	{
@@ -308,6 +309,88 @@ def cmd_seed_docs(args: argparse.Namespace) -> None:
 	print("Done.")
 
 
+def _parse_since(since_str: str) -> str:
+	"""Parse a duration string like '1h', '24h', '7d' into an ISO timestamp."""
+	match = re.match(r"^(\d+)([hmd])$", since_str)
+	if not match:
+		print(f"Invalid --since format: {since_str} (use e.g. 1h, 24h, 7d)")
+		sys.exit(1)
+	amount = int(match.group(1))
+	unit = match.group(2)
+	if unit == "h":
+		delta = timedelta(hours=amount)
+	elif unit == "m":
+		delta = timedelta(minutes=amount)
+	else:
+		delta = timedelta(days=amount)
+	return (datetime.now() - delta).isoformat()
+
+
+def cmd_viz(args: argparse.Namespace) -> None:
+	"""Visualizer subcommand - Rich terminal views for observability."""
+	from .instrumentation import ToolCallStore
+	from .visualizer.dashboard import render_dashboard
+	from .visualizer.plan_progress import render_plan_progress, render_plan_summary
+	from .visualizer.session_timeline import render_session_detail, render_session_list
+	from .visualizer.tool_stats import render_tool_detail, render_tool_stats, render_tool_timeline
+
+	store = ToolCallStore()
+	since = _parse_since(args.since) if getattr(args, "since", None) else None
+	limit = getattr(args, "limit", 50)
+
+	viz_target = getattr(args, "viz_target", None)
+
+	if viz_target == "tools":
+		if getattr(args, "name", None):
+			render_tool_detail(store, args.name, limit=limit)
+		elif getattr(args, "timeline", False):
+			render_tool_timeline(store, limit=limit, since=since)
+		else:
+			render_tool_stats(store, since=since)
+
+	elif viz_target == "sessions":
+		session_id = getattr(args, "session_id", None)
+		if session_id:
+			render_session_detail(store, session_id)
+		else:
+			render_session_list(store)
+
+	elif viz_target == "plan":
+		plan_id = getattr(args, "plan_id", None)
+		plan = asyncio.run(_load_plan(plan_id))
+		if plan:
+			if getattr(args, "summary", False):
+				render_plan_summary(plan)
+			else:
+				render_plan_progress(plan)
+		else:
+			label = f"plan '{plan_id}'" if plan_id else "active plan"
+			print(f"No {label} found.")
+
+	elif viz_target == "dashboard":
+		plan = asyncio.run(_load_plan(None))
+		render_dashboard(store, plan=plan)
+
+	else:
+		print("Usage: claude-orchestrator viz {tools|sessions|plan|dashboard}")
+		print("Run 'claude-orchestrator viz --help' for details.")
+		sys.exit(1)
+
+
+async def _load_plan(plan_id: str | None):
+	"""Load a plan by ID or get the most recent current plan."""
+	try:
+		from .plans.store import get_plan_store
+		plan_store = await get_plan_store()
+		if plan_id:
+			return await plan_store.get_plan(plan_id)
+		# Get most recent current plan across all projects
+		plans = await plan_store.search_plans(current_only=True)
+		return plans[0] if plans else None
+	except Exception:
+		return None
+
+
 def main() -> None:
 	"""CLI entry point."""
 	parser = argparse.ArgumentParser(
@@ -338,6 +421,35 @@ def main() -> None:
 		help="Seed a single source (e.g., 'anthropic-docs', 'mcp-docs')",
 	)
 	seed_parser.set_defaults(func=cmd_seed_docs)
+
+	# viz
+	viz_parser = subparsers.add_parser("viz", help="Visualize tool calls, sessions, and plans")
+	viz_subparsers = viz_parser.add_subparsers(dest="viz_target")
+
+	# viz tools
+	viz_tools = viz_subparsers.add_parser("tools", help="Tool call statistics")
+	viz_tools.add_argument("--timeline", action="store_true", help="Show timeline instead of stats")
+	viz_tools.add_argument("--name", type=str, default=None, help="Detail view for a specific tool")
+	viz_tools.add_argument("--since", type=str, default=None, help="Filter by time (e.g. 1h, 24h, 7d)")
+	viz_tools.add_argument("--limit", type=int, default=50, help="Max results")
+	viz_tools.set_defaults(func=cmd_viz)
+
+	# viz sessions
+	viz_sessions = viz_subparsers.add_parser("sessions", help="Session timelines")
+	viz_sessions.add_argument("session_id", nargs="?", default=None, help="Session ID for detail view")
+	viz_sessions.set_defaults(func=cmd_viz)
+
+	# viz plan
+	viz_plan = viz_subparsers.add_parser("plan", help="Plan progress")
+	viz_plan.add_argument("plan_id", nargs="?", default=None, help="Plan ID (default: latest)")
+	viz_plan.add_argument("--summary", action="store_true", help="Show summary panel instead of tree")
+	viz_plan.set_defaults(func=cmd_viz)
+
+	# viz dashboard
+	viz_dashboard = viz_subparsers.add_parser("dashboard", help="Combined dashboard")
+	viz_dashboard.set_defaults(func=cmd_viz)
+
+	viz_parser.set_defaults(func=cmd_viz)
 
 	args = parser.parse_args()
 
