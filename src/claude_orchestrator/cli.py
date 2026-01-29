@@ -1,6 +1,7 @@
-"""CLI for claude-orchestrator: setup, serve, and doctor commands."""
+"""CLI for claude-orchestrator: setup, serve, doctor, and seed-docs commands."""
 
 import argparse
+import asyncio
 import json
 import os
 import platform
@@ -8,6 +9,22 @@ import sys
 from pathlib import Path
 
 from .config import load_config
+
+
+DEFAULT_SEED_SOURCES = [
+	{
+		"name": "anthropic-docs",
+		"url": "https://docs.anthropic.com/en/docs",
+		"source_name": "anthropic-docs",
+		"max_pages": 100,
+	},
+	{
+		"name": "mcp-docs",
+		"url": "https://modelcontextprotocol.io/docs",
+		"source_name": "mcp-docs",
+		"max_pages": 50,
+	},
+]
 
 
 def _detect_claude_code_config() -> Path | None:
@@ -89,7 +106,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
 	# Step 1: Create directories
 	config = load_config()
-	print("[1/4] Directories")
+	print("[1/5] Directories")
 	print(f"  Config: {config.config_dir}")
 	print(f"  Data:   {config.data_dir}")
 	print()
@@ -103,13 +120,13 @@ def cmd_setup(args: argparse.Namespace) -> None:
 			'\n'
 			'# projects_path = "~/personal_projects"\n'
 		)
-		print(f"[2/4] Config file created: {toml_path}")
+		print(f"[2/5] Config file created: {toml_path}")
 	else:
-		print(f"[2/4] Config file exists: {toml_path}")
+		print(f"[2/5] Config file exists: {toml_path}")
 	print()
 
 	# Step 3: Detect and inject MCP config
-	print("[3/4] MCP configuration")
+	print("[3/5] MCP configuration")
 
 	claude_code = _detect_claude_code_config()
 	if claude_code:
@@ -130,8 +147,19 @@ def cmd_setup(args: argparse.Namespace) -> None:
 		print("  Claude Desktop config: not detected")
 	print()
 
-	# Step 4: Summary
-	print("[4/4] Setup complete")
+	# Step 4: Seed knowledge base
+	print("[4/5] Knowledge base seeding")
+	try:
+		from .knowledge import retriever as _  # noqa: F401
+		response = input("  Seed documentation knowledge base? [y/N] ").strip().lower()
+		if response in ("y", "yes"):
+			print("  Run 'claude-orchestrator seed-docs' to seed the knowledge base.")
+	except ImportError:
+		print("  Skipped (install knowledge extras: pip install -e '.[knowledge]')")
+	print()
+
+	# Step 5: Summary
+	print("[5/5] Setup complete")
 	print()
 	print("  Restart Claude Code / Claude Desktop to load the MCP server.")
 	print("  Run 'claude-orchestrator doctor' to verify.")
@@ -234,6 +262,52 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 		print("  All checks passed.")
 
 
+def cmd_seed_docs(args: argparse.Namespace) -> None:
+	"""Seed the knowledge base by crawling and indexing documentation sources."""
+	try:
+		from .knowledge.retriever import crawl_and_index
+	except ImportError:
+		print("Error: knowledge extras not installed.")
+		print("Install with: pip install -e '.[knowledge]'")
+		sys.exit(1)
+
+	source_filter = getattr(args, "source", None)
+
+	sources = DEFAULT_SEED_SOURCES
+	if source_filter:
+		sources = [s for s in sources if s["name"] == source_filter]
+		if not sources:
+			available = ", ".join(s["name"] for s in DEFAULT_SEED_SOURCES)
+			print(f"Unknown source: {source_filter}")
+			print(f"Available: {available}")
+			sys.exit(1)
+
+	print("claude-orchestrator seed-docs")
+	print(f"{'=' * 40}")
+	print()
+
+	for source in sources:
+		print(f"  Crawling {source['name']} ({source['url']}, max {source['max_pages']} pages)...")
+		try:
+			result_json = asyncio.run(crawl_and_index(
+				start_url=source["url"],
+				source_name=source["source_name"],
+				max_pages=source["max_pages"],
+			))
+			result = json.loads(result_json)
+			if result.get("success"):
+				crawl = result.get("crawl", {})
+				index = result.get("index", {})
+				print(f"    Crawled {crawl.get('successful', 0)} pages, indexed {index.get('total_chunks', 0)} chunks")
+			else:
+				print(f"    Error: {result.get('error', 'unknown')}")
+		except Exception as e:
+			print(f"    Failed: {e}")
+		print()
+
+	print("Done.")
+
+
 def main() -> None:
 	"""CLI entry point."""
 	parser = argparse.ArgumentParser(
@@ -254,6 +328,16 @@ def main() -> None:
 	# doctor
 	doctor_parser = subparsers.add_parser("doctor", help="Health check")
 	doctor_parser.set_defaults(func=cmd_doctor)
+
+	# seed-docs
+	seed_parser = subparsers.add_parser("seed-docs", help="Seed knowledge base with documentation")
+	seed_parser.add_argument(
+		"--source",
+		type=str,
+		default=None,
+		help="Seed a single source (e.g., 'anthropic-docs', 'mcp-docs')",
+	)
+	seed_parser.set_defaults(func=cmd_seed_docs)
 
 	args = parser.parse_args()
 

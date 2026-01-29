@@ -1,9 +1,17 @@
 """Tests for the CLI module."""
 
 import json
+import subprocess
+import sys
 from pathlib import Path
+from unittest.mock import patch
 
-from claude_orchestrator.cli import _inject_mcp_config
+from claude_orchestrator.cli import (
+	_inject_mcp_config,
+	DEFAULT_SEED_SOURCES,
+	cmd_seed_docs,
+	main,
+)
 
 
 def test_inject_mcp_config_creates_entry(tmp_path: Path):
@@ -64,3 +72,44 @@ def test_inject_mcp_config_preserves_existing(tmp_path: Path):
 	assert "other-server" in data["mcpServers"]
 	assert "claude-orchestrator" in data["mcpServers"]
 	assert data["someOtherKey"] is True
+
+
+def test_seed_docs_subparser_registered():
+	"""seed-docs subparser should be registered in the CLI."""
+	with patch("sys.argv", ["claude-orchestrator", "seed-docs", "--help"]):
+		try:
+			main()
+		except SystemExit as e:
+			# --help causes SystemExit(0)
+			assert e.code == 0
+
+
+def test_seed_docs_source_flag():
+	"""seed-docs should accept --source flag."""
+	with patch("sys.argv", ["claude-orchestrator", "seed-docs", "--source", "anthropic-docs", "--help"]):
+		try:
+			main()
+		except SystemExit as e:
+			assert e.code == 0
+
+
+def test_default_seed_sources_defined():
+	"""DEFAULT_SEED_SOURCES should contain expected sources."""
+	names = [s["name"] for s in DEFAULT_SEED_SOURCES]
+	assert "anthropic-docs" in names
+	assert "mcp-docs" in names
+
+
+def test_seed_docs_graceful_import_error():
+	"""seed-docs should exit gracefully when knowledge extras are missing."""
+	import argparse
+
+	args = argparse.Namespace(source=None)
+
+	with patch.dict("sys.modules", {"claude_orchestrator.knowledge": None, "claude_orchestrator.knowledge.retriever": None}):
+		with patch("builtins.__import__", side_effect=ImportError("no knowledge")):
+			try:
+				cmd_seed_docs(args)
+				assert False, "Should have called sys.exit"
+			except SystemExit as e:
+				assert e.code == 1
