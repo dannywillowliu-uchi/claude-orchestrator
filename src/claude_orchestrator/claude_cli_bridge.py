@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable, List, Optional
 
 if TYPE_CHECKING:
 	from .hooks import HooksConfig
+	from .schemas import ResponseSchema
 
 logger = logging.getLogger(__name__)
 
@@ -181,13 +182,19 @@ class ClaudeCLIBridge:
 		self._ready = False
 		logger.info("Claude CLI Bridge stopped")
 
-	async def send_prompt(self, prompt: str, timeout: int = 300) -> str:
+	async def send_prompt(
+		self,
+		prompt: str,
+		timeout: int = 300,
+		output_schema: Optional["ResponseSchema"] = None,
+	) -> str:
 		"""
 		Send a prompt to Claude CLI and get response.
 
 		Args:
 			prompt: The prompt to send
 			timeout: Seconds to wait for response (default 5 min)
+			output_schema: Optional schema for structured output validation
 
 		Returns:
 			Claude's response text
@@ -215,6 +222,9 @@ class ClaudeCLIBridge:
 			else:
 				# Full access or no config: use --dangerously-skip-permissions
 				cli_args.append("--dangerously-skip-permissions")
+
+			if output_schema is not None:
+				cli_args.extend(["--output-format", "json"])
 
 			cli_args.append(prompt)
 
@@ -246,6 +256,12 @@ class ClaudeCLIBridge:
 				raise CLIBridgeError(f"Claude CLI failed: {error_msg}")
 
 			logger.info(f"Response received ({len(stdout_text)} chars)")
+
+			# Best-effort schema validation (log warning, still return raw)
+			if output_schema is not None:
+				is_valid, _, error = output_schema.validate(stdout_text)
+				if not is_valid:
+					logger.warning(f"Response failed schema validation: {error}")
 
 			# Notify callback if set
 			if self.on_output:
