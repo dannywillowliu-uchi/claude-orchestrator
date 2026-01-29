@@ -30,14 +30,19 @@ claude-orchestrator setup
 claude-orchestrator doctor
 ```
 
-The setup wizard creates config directories, writes a default config, injects the MCP server entry into Claude Code / Claude Desktop, and runs a health check to verify everything works.
+The setup wizard creates config directories, writes a default config, injects the MCP server entry into Claude Code / Claude Desktop, installs a `CLAUDE.md` into your projects, and runs a health check to verify everything works.
 
 ### First Steps After Setup
 
 1. **Restart Claude Code** (or Claude Desktop) to load the new MCP server.
-2. In Claude Code, try: *"Use the health_check tool to verify the orchestrator is running."*
-3. Start a planning session: *"Start a planning session for my project."*
-4. If you installed knowledge extras, seed the docs: `claude-orchestrator seed-docs`
+2. **Initialize your projects** with orchestrator instructions:
+   ```bash
+   claude-orchestrator init-project ~/my-project
+   ```
+   This copies a `CLAUDE.md` into your project that teaches Claude Code to use planning sessions, verification gates, Telegram notifications, and other orchestrator tools automatically. **Commit it to your repo** so collaborators get the same setup.
+3. In Claude Code, try: *"Use the health_check tool to verify the orchestrator is running."*
+4. Start a planning session: *"Start a planning session for my project."*
+5. If you installed knowledge extras, seed the docs: `claude-orchestrator seed-docs`
 
 ## Optional Extras
 
@@ -126,11 +131,13 @@ Environment variable overrides (`CLAUDE_ORCHESTRATOR_*`):
 ## CLI Commands
 
 ```bash
-claude-orchestrator setup          # Interactive setup wizard
-claude-orchestrator setup --check  # Verify current config
-claude-orchestrator serve          # Run MCP server (used by Claude)
-claude-orchestrator doctor         # Health check (exits non-zero on issues)
-claude-orchestrator seed-docs      # Seed knowledge base with documentation
+claude-orchestrator setup              # Interactive setup wizard
+claude-orchestrator setup --check      # Verify current config
+claude-orchestrator serve              # Run MCP server (used by Claude)
+claude-orchestrator doctor             # Health check (exits non-zero on issues)
+claude-orchestrator init-project .     # Install CLAUDE.md into current project
+claude-orchestrator init-project ~/foo # Install CLAUDE.md into specific project
+claude-orchestrator seed-docs          # Seed knowledge base with documentation
 claude-orchestrator viz dashboard  # Terminal dashboard for observability
 claude-orchestrator viz web        # Web dashboard (requires web extras)
 ```

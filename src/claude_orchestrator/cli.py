@@ -14,6 +14,26 @@ from importlib.metadata import version as pkg_version
 
 from .config import load_config
 
+def _get_bundled_claude_md() -> str:
+	"""Read the bundled CLAUDE.md from the package."""
+	import importlib.resources as resources
+	ref = resources.files("claude_orchestrator").joinpath("CLAUDE.md")
+	return ref.read_text(encoding="utf-8")
+
+
+def _install_claude_md(target_dir: Path) -> tuple[bool, str]:
+	"""Copy bundled CLAUDE.md to a target directory.
+
+	Returns (created, message). If the file already exists, skips it.
+	"""
+	target = target_dir / "CLAUDE.md"
+	if target.exists():
+		return False, f"Already exists: {target}"
+	content = _get_bundled_claude_md()
+	target.write_text(content, encoding="utf-8")
+	return True, f"Created: {target}"
+
+
 DEFAULT_SEED_SOURCES = [
 	{
 		"name": "anthropic-docs",
@@ -109,7 +129,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
 	# Step 1: Create directories + show extras status
 	config = load_config()
-	print("[1/6] Directories & extras")
+	print("[1/7] Directories & extras")
 	print(f"  Config: {config.config_dir}")
 	print(f"  Data:   {config.data_dir}")
 	print()
@@ -131,13 +151,13 @@ def cmd_setup(args: argparse.Namespace) -> None:
 			'\n'
 			'# projects_path = "~/personal_projects"\n'
 		)
-		print(f"[2/6] Config file created: {toml_path}")
+		print(f"[2/7] Config file created: {toml_path}")
 	else:
-		print(f"[2/6] Config file exists: {toml_path}")
+		print(f"[2/7] Config file exists: {toml_path}")
 	print()
 
 	# Step 3: Detect and inject MCP config
-	print("[3/6] MCP configuration")
+	print("[3/7] MCP configuration")
 
 	claude_code = _detect_claude_code_config()
 	if claude_code:
@@ -158,8 +178,45 @@ def cmd_setup(args: argparse.Namespace) -> None:
 		print("  Claude Desktop config: not detected")
 	print()
 
-	# Step 4: Seed knowledge base
-	print("[4/6] Knowledge base seeding")
+	# Step 4: Install CLAUDE.md for Claude Code integration
+	print("[4/7] Claude Code project instructions (CLAUDE.md)")
+	print("  The orchestrator ships a CLAUDE.md that teaches Claude Code how to")
+	print("  use planning sessions, verification gates, Telegram notifications,")
+	print("  and other orchestrator tools automatically.")
+	print()
+	projects_path = config.projects_path
+	cwd = Path.cwd()
+	targets = []
+	if cwd != Path.home() and (cwd / ".git").exists():
+		targets.append(("current project", cwd))
+	if projects_path.exists():
+		targets.append(("projects root", projects_path))
+
+	if targets:
+		for label, target in targets:
+			existing = (target / "CLAUDE.md").exists()
+			default = "n" if existing else "Y"
+			prompt_str = f"  Install CLAUDE.md to {label} ({target})? [{'y/N' if existing else 'Y/n'}] "
+			response = input(prompt_str).strip().lower()
+			should_install = response in ("y", "yes") if existing else response in ("", "y", "yes")
+			if should_install:
+				if existing:
+					response = input("  File already exists. Overwrite? [y/N] ").strip().lower()
+					if response not in ("y", "yes"):
+						print(f"  Skipped: {target / 'CLAUDE.md'}")
+						continue
+					(target / "CLAUDE.md").unlink()
+				created, msg = _install_claude_md(target)
+				print(f"  {msg}")
+			else:
+				print(f"  Skipped: {target}")
+	else:
+		print(f"  No project directories found. Use 'claude-orchestrator init-project <path>'")
+		print(f"  to install CLAUDE.md into any project later.")
+	print()
+
+	# Step 5: Seed knowledge base
+	print("[5/7] Knowledge base seeding")
 	try:
 		from .knowledge import retriever as _  # noqa: F401
 		response = input("  Seed documentation knowledge base? [y/N] ").strip().lower()
@@ -169,8 +226,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
 		print("  Skipped (install knowledge extras: pip install claude-orchestrator[knowledge])")
 	print()
 
-	# Step 5: Run doctor to verify
-	print("[5/6] Verification")
+	# Step 6: Run doctor to verify
+	print("[6/7] Verification")
 	print()
 	try:
 		cmd_doctor(argparse.Namespace())
@@ -178,8 +235,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
 		pass  # doctor may exit(1) on issues, don't propagate during setup
 	print()
 
-	# Step 6: Next steps
-	print("[6/6] Next steps")
+	# Step 7: Next steps
+	print("[7/7] Next steps")
 	next_steps = []
 	if missing_extras:
 		next_steps.append(f"  Install extras: pip install claude-orchestrator[all]")
@@ -388,6 +445,30 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 		print("  All checks passed.")
 
 
+def cmd_init_project(args: argparse.Namespace) -> None:
+	"""Install CLAUDE.md into a project directory."""
+	target = Path(args.path).resolve()
+	if not target.is_dir():
+		print(f"Error: {target} is not a directory.")
+		sys.exit(1)
+
+	target_file = target / "CLAUDE.md"
+	if target_file.exists() and not args.force:
+		print(f"CLAUDE.md already exists at {target_file}")
+		print("Use --force to overwrite.")
+		sys.exit(1)
+
+	if target_file.exists():
+		target_file.unlink()
+
+	created, msg = _install_claude_md(target)
+	print(msg)
+	if created:
+		print()
+		print("Claude Code will now use orchestrator tools automatically in this project.")
+		print("Commit CLAUDE.md to your repo so collaborators get the same setup.")
+
+
 def cmd_seed_docs(args: argparse.Namespace) -> None:
 	"""Seed the knowledge base by crawling and indexing documentation sources."""
 	try:
@@ -554,6 +635,15 @@ def main() -> None:
 	# doctor
 	doctor_parser = subparsers.add_parser("doctor", help="Health check")
 	doctor_parser.set_defaults(func=cmd_doctor)
+
+	# init-project
+	init_parser = subparsers.add_parser(
+		"init-project",
+		help="Install CLAUDE.md into a project for Claude Code integration",
+	)
+	init_parser.add_argument("path", nargs="?", default=".", help="Project directory (default: current)")
+	init_parser.add_argument("--force", action="store_true", help="Overwrite existing CLAUDE.md")
+	init_parser.set_defaults(func=cmd_init_project)
 
 	# seed-docs
 	seed_parser = subparsers.add_parser("seed-docs", help="Seed knowledge base with documentation")

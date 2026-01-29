@@ -43,8 +43,12 @@ knowledge = [
 	"beautifulsoup4>=4.12.0",
 	"pandas>=2.0.0",
 ]
+web = [
+	"starlette>=0.27.0",
+	"uvicorn[standard]>=0.24.0",
+]
 all = [
-	"claude-orchestrator[visual,knowledge]",
+	"claude-orchestrator[visual,knowledge,web]",
 ]
 dev = [
 	"pytest>=7.0.0",
@@ -63,6 +67,9 @@ claude-orchestrator = "claude_orchestrator.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+claude_orchestrator = ["CLAUDE.md"]
 
 [tool.ruff]
 line-length = 120

@@ -13,8 +13,11 @@ from claude_orchestrator.cli import (
 	_check_config_toml,
 	_check_optional_extras,
 	_check_secrets_json,
+	_get_bundled_claude_md,
+	_install_claude_md,
 	_inject_mcp_config,
 	cmd_doctor,
+	cmd_init_project,
 	DEFAULT_SEED_SOURCES,
 	cmd_seed_docs,
 	main,
@@ -201,6 +204,62 @@ class TestCheckOptionalExtras:
 			for name, status in results:
 				assert "NOT INSTALLED" in status
 				assert f"pip install claude-orchestrator[{name}]" in status
+
+
+class TestInitProject:
+	"""Tests for CLAUDE.md installation."""
+
+	def test_bundled_claude_md_exists(self):
+		"""Bundled CLAUDE.md should be readable from the package."""
+		content = _get_bundled_claude_md()
+		assert "claude-orchestrator" in content
+		assert "run_verification" in content
+		assert "telegram_notify" in content
+
+	def test_install_creates_file(self, tmp_path: Path):
+		"""install_claude_md should create CLAUDE.md in target dir."""
+		created, msg = _install_claude_md(tmp_path)
+		assert created is True
+		assert (tmp_path / "CLAUDE.md").exists()
+		content = (tmp_path / "CLAUDE.md").read_text()
+		assert "claude-orchestrator" in content
+
+	def test_install_skips_existing(self, tmp_path: Path):
+		"""install_claude_md should not overwrite existing file."""
+		(tmp_path / "CLAUDE.md").write_text("existing content")
+		created, msg = _install_claude_md(tmp_path)
+		assert created is False
+		assert "Already exists" in msg
+		assert (tmp_path / "CLAUDE.md").read_text() == "existing content"
+
+	def test_cmd_init_project(self, tmp_path: Path):
+		"""init-project command should install CLAUDE.md."""
+		args = argparse.Namespace(path=str(tmp_path), force=False)
+		cmd_init_project(args)
+		assert (tmp_path / "CLAUDE.md").exists()
+
+	def test_cmd_init_project_refuses_overwrite(self, tmp_path: Path):
+		"""init-project should refuse to overwrite without --force."""
+		(tmp_path / "CLAUDE.md").write_text("existing")
+		args = argparse.Namespace(path=str(tmp_path), force=False)
+		with pytest.raises(SystemExit) as exc_info:
+			cmd_init_project(args)
+		assert exc_info.value.code == 1
+
+	def test_cmd_init_project_force_overwrites(self, tmp_path: Path):
+		"""init-project --force should overwrite existing file."""
+		(tmp_path / "CLAUDE.md").write_text("old content")
+		args = argparse.Namespace(path=str(tmp_path), force=True)
+		cmd_init_project(args)
+		content = (tmp_path / "CLAUDE.md").read_text()
+		assert "claude-orchestrator" in content
+
+	def test_init_project_subparser_registered(self):
+		"""init-project subparser should be registered in the CLI."""
+		with patch("sys.argv", ["claude-orchestrator", "init-project", "--help"]):
+			with pytest.raises(SystemExit) as exc_info:
+				main()
+			assert exc_info.value.code == 0
 
 
 class TestDoctorExitCode:
