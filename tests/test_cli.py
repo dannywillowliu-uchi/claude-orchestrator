@@ -1,13 +1,20 @@
 """Tests for the CLI module."""
 
+import argparse
 import json
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from claude_orchestrator.cli import (
+	_check_config_toml,
+	_check_optional_extras,
+	_check_secrets_json,
 	_inject_mcp_config,
+	cmd_doctor,
 	DEFAULT_SEED_SOURCES,
 	cmd_seed_docs,
 	main,
@@ -102,8 +109,6 @@ def test_default_seed_sources_defined():
 
 def test_seed_docs_graceful_import_error():
 	"""seed-docs should exit gracefully when knowledge extras are missing."""
-	import argparse
-
 	args = argparse.Namespace(source=None)
 
 	with patch.dict("sys.modules", {"claude_orchestrator.knowledge": None, "claude_orchestrator.knowledge.retriever": None}):
@@ -113,3 +118,99 @@ def test_seed_docs_graceful_import_error():
 				assert False, "Should have called sys.exit"
 			except SystemExit as e:
 				assert e.code == 1
+
+
+# --- Doctor command tests ---
+
+class TestCheckConfigToml:
+	"""Tests for config.toml validation."""
+
+	def test_missing_toml(self, tmp_path: Path):
+		status, issue = _check_config_toml(tmp_path)
+		assert "not found" in status
+		assert issue is None
+
+	def test_valid_toml(self, tmp_path: Path):
+		(tmp_path / "config.toml").write_text('projects_path = "~/projects"\n')
+		status, issue = _check_config_toml(tmp_path)
+		assert status == "valid"
+		assert issue is None
+
+	def test_invalid_toml(self, tmp_path: Path):
+		(tmp_path / "config.toml").write_text("this is [not valid toml\n")
+		status, issue = _check_config_toml(tmp_path)
+		assert "INVALID" in status
+		assert issue is not None
+
+
+class TestCheckSecretsJson:
+	"""Tests for secrets.json validation."""
+
+	def test_missing_secrets(self, tmp_path: Path):
+		status, issue = _check_secrets_json(tmp_path / "secrets.json")
+		assert "not found" in status
+		assert issue is None
+
+	def test_valid_secrets(self, tmp_path: Path):
+		secrets_file = tmp_path / "secrets.json"
+		secrets_file.write_text(json.dumps({
+			"keys": {
+				"openai": {"value": "sk-...", "active": True},
+				"github": {"value": "ghp-...", "active": False},
+			}
+		}))
+		status, issue = _check_secrets_json(secrets_file)
+		assert "2 secrets" in status
+		assert "1 active" in status
+		assert issue is None
+
+	def test_invalid_json(self, tmp_path: Path):
+		secrets_file = tmp_path / "secrets.json"
+		secrets_file.write_text("{broken json")
+		status, issue = _check_secrets_json(secrets_file)
+		assert "INVALID" in status
+		assert issue is not None
+
+	def test_legacy_string_format(self, tmp_path: Path):
+		secrets_file = tmp_path / "secrets.json"
+		secrets_file.write_text(json.dumps({
+			"keys": {
+				"openai": "sk-raw-string-value",
+				"github": {"value": "ghp-...", "active": True},
+			}
+		}))
+		status, issue = _check_secrets_json(secrets_file)
+		assert "legacy" in status
+		assert issue is not None
+
+
+class TestCheckOptionalExtras:
+	"""Tests for optional extras detection."""
+
+	def test_returns_all_extras(self):
+		results = _check_optional_extras()
+		names = [name for name, _ in results]
+		assert "visual" in names
+		assert "knowledge" in names
+		assert "web" in names
+
+	def test_missing_extra_shows_install_command(self):
+		"""Extras that aren't installed should show pip install command."""
+		with patch("claude_orchestrator.cli.pkg_version", side_effect=Exception("not found")):
+			results = _check_optional_extras()
+			for name, status in results:
+				assert "NOT INSTALLED" in status
+				assert f"pip install claude-orchestrator[{name}]" in status
+
+
+class TestDoctorExitCode:
+	"""Test that doctor returns proper exit codes."""
+
+	def test_doctor_exits_1_on_issues(self):
+		"""Doctor should exit(1) when there are issues."""
+		args = argparse.Namespace()
+		# Mock a core dep as missing to trigger an issue
+		with patch("claude_orchestrator.cli.pkg_version", side_effect=Exception("nope")):
+			with pytest.raises(SystemExit) as exc_info:
+				cmd_doctor(args)
+			assert exc_info.value.code == 1

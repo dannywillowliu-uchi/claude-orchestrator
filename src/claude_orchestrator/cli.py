@@ -10,6 +10,8 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from importlib.metadata import version as pkg_version
+
 from .config import load_config
 
 DEFAULT_SEED_SOURCES = [
@@ -202,43 +204,135 @@ def cmd_serve(args: argparse.Namespace) -> None:
 	mcp.run()
 
 
+def _check_optional_extras() -> list[tuple[str, str]]:
+	"""Check optional extras installation status.
+
+	Returns list of (extra_name, status_string) tuples.
+	"""
+	extras = {
+		"visual": ["playwright"],
+		"knowledge": ["lancedb", "sentence-transformers", "aiohttp", "markdownify"],
+		"web": ["starlette", "uvicorn"],
+	}
+	results = []
+	for extra_name, packages in extras.items():
+		installed = []
+		for pkg in packages:
+			try:
+				ver = pkg_version(pkg)
+				installed.append(f"{pkg} {ver}")
+			except Exception:
+				pass
+		if installed:
+			results.append((extra_name, ", ".join(installed)))
+		else:
+			results.append((extra_name, f"NOT INSTALLED (pip install claude-orchestrator[{extra_name}])"))
+	return results
+
+
+def _check_config_toml(config_dir: Path) -> tuple[str, str | None]:
+	"""Validate config.toml. Returns (status, issue_or_none)."""
+	import tomllib
+
+	toml_path = config_dir / "config.toml"
+	if not toml_path.exists():
+		return "not found (optional)", None
+	try:
+		with open(toml_path, "rb") as f:
+			tomllib.load(f)
+		return "valid", None
+	except tomllib.TOMLDecodeError as e:
+		msg = f"config.toml parse error: {e}"
+		return f"INVALID ({e})", msg
+
+
+def _check_secrets_json(secrets_file: Path) -> tuple[str, str | None]:
+	"""Validate secrets.json. Returns (status, issue_or_none)."""
+	if not secrets_file.exists():
+		return "not found (optional)", None
+	try:
+		with open(secrets_file) as f:
+			data = json.load(f)
+		keys = data.get("keys", {})
+		if not isinstance(keys, dict):
+			return "INVALID (keys is not a dict)", "secrets.json: 'keys' field is not a dict"
+		active = sum(1 for v in keys.values() if isinstance(v, dict) and v.get("active", True))
+		legacy = sum(1 for v in keys.values() if isinstance(v, str))
+		status = f"{len(keys)} secrets ({active} active)"
+		if legacy:
+			status += f", {legacy} legacy string-format"
+		issue = f"secrets.json has {legacy} legacy string-format entries" if legacy else None
+		return status, issue
+	except (json.JSONDecodeError, IOError) as e:
+		return f"INVALID ({e})", f"secrets.json unreadable: {e}"
+
+
+def _check_server_startup() -> tuple[str, str | None]:
+	"""Try importing and counting registered tools. Returns (status, issue_or_none)."""
+	try:
+		from .server import mcp as server_instance
+		# FastMCP stores tools internally - count them
+		tools = server_instance._tool_manager._tools
+		count = len(tools)
+		return f"OK ({count} tools registered)", None
+	except Exception as e:
+		return f"FAILED ({e})", f"Server startup failed: {e}"
+
+
 def cmd_doctor(args: argparse.Namespace) -> None:
 	"""Health check - verify installation and configuration."""
 	print("claude-orchestrator doctor")
 	print(f"{'=' * 40}")
-	print()
 
 	config = load_config()
+	issues: list[str] = []
 
-	# Check Python version
+	# System info
 	py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-	print(f"  Python:    {py_ver}")
-	print(f"  Platform:  {platform.system()} {platform.machine()}")
-	print(f"  Config:    {config.config_dir}")
-	print(f"  Data:      {config.data_dir}")
+	print(f"  Python:       {py_ver}")
+	print(f"  Platform:     {platform.system()} {platform.machine()}")
 	print()
 
-	# Check dependencies
-	issues = []
-	try:
-		from importlib.metadata import version as pkg_version
-		mcp_ver = pkg_version("mcp")
-		print(f"  mcp:         {mcp_ver}")
-	except Exception:
-		print("  mcp:         NOT INSTALLED")
-		issues.append("mcp package not installed")
-
-	for dep in ["aiosqlite", "platformdirs", "python-dotenv"]:
+	# Core deps
+	print("  Core deps:")
+	core_deps = ["mcp", "aiosqlite", "platformdirs", "python-dotenv", "pexpect", "PyGithub", "rich"]
+	for dep in core_deps:
 		try:
 			dep_ver = pkg_version(dep)
-			print(f"  {dep:14s} {dep_ver}")
+			print(f"    {dep:22s} {dep_ver}")
 		except Exception:
-			print(f"  {dep:14s} NOT INSTALLED")
+			print(f"    {dep:22s} NOT INSTALLED")
 			issues.append(f"{dep} package not installed")
-
 	print()
 
-	# Check MCP config injection
+	# Optional extras
+	print("  Optional extras:")
+	for extra_name, status in _check_optional_extras():
+		print(f"    {extra_name:22s} {status}")
+	print()
+
+	# Config validation
+	print("  Config:")
+	toml_status, toml_issue = _check_config_toml(config.config_dir)
+	print(f"    config.toml:         {toml_status}")
+	if toml_issue:
+		issues.append(toml_issue)
+
+	secrets_status, secrets_issue = _check_secrets_json(config.secrets_file)
+	print(f"    secrets.json:        {secrets_status}")
+	if secrets_issue:
+		issues.append(secrets_issue)
+	print()
+
+	# Server startup test
+	print("  Server:")
+	server_status, server_issue = _check_server_startup()
+	print(f"    {server_status}")
+	if server_issue:
+		issues.append(server_issue)
+	print()
+
+	# MCP config injection
 	claude_code = _detect_claude_code_config()
 	if claude_code and claude_code.exists():
 		try:
@@ -246,19 +340,20 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 				data = json.load(f)
 			has_entry = "claude-orchestrator" in data.get("mcpServers", {})
 			status = "configured" if has_entry else "not configured"
-			print(f"  Claude Code: {status}")
+			print(f"  Claude Code:  {status}")
 			if not has_entry:
 				issues.append("claude-orchestrator not in Claude Code MCP config")
 		except (json.JSONDecodeError, IOError):
-			print("  Claude Code: config file unreadable")
+			print("  Claude Code:  config file unreadable")
 	else:
-		print("  Claude Code: config not found")
+		print("  Claude Code:  config not found")
 
 	print()
 	if issues:
 		print(f"  {len(issues)} issue(s) found:")
 		for issue in issues:
 			print(f"    - {issue}")
+		sys.exit(1)
 	else:
 		print("  All checks passed.")
 
@@ -340,6 +435,10 @@ def cmd_viz(args: argparse.Namespace) -> None:
 
 	viz_target = getattr(args, "viz_target", None)
 
+	if viz_target == "web":
+		cmd_viz_web(args)
+		return
+
 	if viz_target == "tools":
 		if getattr(args, "name", None):
 			render_tool_detail(store, args.name, limit=limit)
@@ -372,9 +471,23 @@ def cmd_viz(args: argparse.Namespace) -> None:
 		render_dashboard(store, plan=plan)
 
 	else:
-		print("Usage: claude-orchestrator viz {tools|sessions|plan|dashboard}")
+		print("Usage: claude-orchestrator viz {tools|sessions|plan|dashboard|web}")
 		print("Run 'claude-orchestrator viz --help' for details.")
 		sys.exit(1)
+
+
+def cmd_viz_web(args: argparse.Namespace) -> None:
+	"""Launch the web dashboard."""
+	try:
+		from .web import run_web_dashboard
+	except ImportError:
+		print("Web extras not installed.")
+		print("Install with: pip install -e '.[web]'")
+		sys.exit(1)
+
+	port = getattr(args, "port", 8420)
+	no_open = getattr(args, "no_open", False)
+	run_web_dashboard(port=port, open_browser=not no_open)
 
 
 async def _load_plan(plan_id: str | None):
@@ -448,6 +561,12 @@ def main() -> None:
 	# viz dashboard
 	viz_dashboard = viz_subparsers.add_parser("dashboard", help="Combined dashboard")
 	viz_dashboard.set_defaults(func=cmd_viz)
+
+	# viz web
+	viz_web = viz_subparsers.add_parser("web", help="Launch web dashboard")
+	viz_web.add_argument("--port", type=int, default=8420, help="Server port (default: 8420)")
+	viz_web.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
+	viz_web.set_defaults(func=cmd_viz)
 
 	viz_parser.set_defaults(func=cmd_viz)
 
