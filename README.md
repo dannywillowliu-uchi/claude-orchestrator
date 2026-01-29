@@ -1,6 +1,20 @@
 # claude-orchestrator
 
-MCP server for Claude Code: planning, verification, TDD, progress tracking, GitHub integration, sub-agent sessions, visual testing, and knowledge indexing.
+An MCP server that turns Claude Code into a structured, autonomous-capable development workflow.
+
+## Why This Exists
+
+Claude Code is powerful, but out of the box it has no persistent memory between sessions, no structured planning, no verification gates, and no way to track decisions across a multi-phase project. This means you spend time re-explaining context, re-discovering gotchas, and manually checking that code quality holds up.
+
+**claude-orchestrator** solves this by giving Claude Code a set of MCP tools for:
+
+- **Structured planning** -- Interactive Q&A sessions that front-load 90% of the thinking before a single line of code is written. The result is a versioned, phased plan that Claude follows autonomously with minimal back-and-forth.
+- **Persistent project memory** -- Decisions, gotchas, and implementation status are written to each project's CLAUDE.md automatically. Cross-project learnings survive across sessions in a global learnings file. Context is never lost.
+- **Verification gates** -- Every commit candidate runs through pytest, ruff, mypy, and bandit automatically. Claude doesn't ship broken code because it literally can't bypass the gate.
+- **Sub-agent delegation** -- Spawn and supervise additional Claude CLI sessions for parallel workstreams, with output capture and approval routing.
+- **Knowledge indexing** -- Crawl and semantically index documentation (SDK docs, internal wikis) so Claude can search them during implementation instead of hallucinating.
+
+The net effect: you describe what you want, approve a plan, and Claude executes it phase-by-phase with quality checks at every step -- closer to a junior developer than a chat autocomplete.
 
 ## Quick Start
 
