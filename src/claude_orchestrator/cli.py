@@ -107,11 +107,19 @@ def cmd_setup(args: argparse.Namespace) -> None:
 	print(f"{'=' * 40}")
 	print()
 
-	# Step 1: Create directories
+	# Step 1: Create directories + show extras status
 	config = load_config()
-	print("[1/5] Directories")
+	print("[1/6] Directories & extras")
 	print(f"  Config: {config.config_dir}")
 	print(f"  Data:   {config.data_dir}")
+	print()
+	print("  Installed extras:")
+	extras_results = _check_optional_extras()
+	missing_extras = []
+	for extra_name, status in extras_results:
+		print(f"    {extra_name:14s} {status}")
+		if "NOT INSTALLED" in status:
+			missing_extras.append(extra_name)
 	print()
 
 	# Step 2: Write default config.toml
@@ -123,13 +131,13 @@ def cmd_setup(args: argparse.Namespace) -> None:
 			'\n'
 			'# projects_path = "~/personal_projects"\n'
 		)
-		print(f"[2/5] Config file created: {toml_path}")
+		print(f"[2/6] Config file created: {toml_path}")
 	else:
-		print(f"[2/5] Config file exists: {toml_path}")
+		print(f"[2/6] Config file exists: {toml_path}")
 	print()
 
 	# Step 3: Detect and inject MCP config
-	print("[3/5] MCP configuration")
+	print("[3/6] MCP configuration")
 
 	claude_code = _detect_claude_code_config()
 	if claude_code:
@@ -151,21 +159,43 @@ def cmd_setup(args: argparse.Namespace) -> None:
 	print()
 
 	# Step 4: Seed knowledge base
-	print("[4/5] Knowledge base seeding")
+	print("[4/6] Knowledge base seeding")
 	try:
 		from .knowledge import retriever as _  # noqa: F401
 		response = input("  Seed documentation knowledge base? [y/N] ").strip().lower()
 		if response in ("y", "yes"):
 			print("  Run 'claude-orchestrator seed-docs' to seed the knowledge base.")
 	except ImportError:
-		print("  Skipped (install knowledge extras: pip install -e '.[knowledge]')")
+		print("  Skipped (install knowledge extras: pip install claude-orchestrator[knowledge])")
 	print()
 
-	# Step 5: Summary
-	print("[5/5] Setup complete")
+	# Step 5: Run doctor to verify
+	print("[5/6] Verification")
 	print()
-	print("  Restart Claude Code / Claude Desktop to load the MCP server.")
-	print("  Run 'claude-orchestrator doctor' to verify.")
+	try:
+		cmd_doctor(argparse.Namespace())
+	except SystemExit:
+		pass  # doctor may exit(1) on issues, don't propagate during setup
+	print()
+
+	# Step 6: Next steps
+	print("[6/6] Next steps")
+	next_steps = []
+	if missing_extras:
+		next_steps.append(f"  Install extras: pip install claude-orchestrator[all]")
+	if "knowledge" not in missing_extras:
+		# Knowledge is installed, check if seeded
+		knowledge_dir = config.data_dir / "knowledge"
+		if not knowledge_dir.exists() or not any(knowledge_dir.iterdir() if knowledge_dir.exists() else []):
+			next_steps.append("  Seed docs: claude-orchestrator seed-docs")
+	if not config.secrets_file.exists():
+		next_steps.append("  Add API keys via the set_secret MCP tool")
+	next_steps.append("  Restart Claude Code / Claude Desktop to load the MCP server")
+
+	for step in next_steps:
+		print(step)
+	if not next_steps:
+		print("  Everything looks good!")
 
 
 def cmd_setup_check() -> None:
