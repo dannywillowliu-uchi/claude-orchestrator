@@ -36,11 +36,15 @@ def register_all_tools(mcp: FastMCP, config: Config) -> None:
 		from .visual import register_visual_tools
 		register_visual_tools(mcp, config)
 	except ImportError:
-		logger.info("Visual verification tools unavailable (install playwright)")
+		from .stubs import register_visual_stubs
+		register_visual_stubs(mcp)
+		logger.info("Visual extras not installed - registered stub tools (pip install claude-orchestrator[visual])")
 
 	# Optional: knowledge base (requires lancedb, sentence-transformers, aiohttp, markdownify)
 	try:
 		from .knowledge import register_knowledge_tools
 		register_knowledge_tools(mcp, config)
 	except ImportError:
-		logger.info("Knowledge tools unavailable (install claude-orchestrator[knowledge])")
+		from .stubs import register_knowledge_stubs
+		register_knowledge_stubs(mcp)
+		logger.info("Knowledge extras not installed - registered stub tools (pip install claude-orchestrator[knowledge])")
