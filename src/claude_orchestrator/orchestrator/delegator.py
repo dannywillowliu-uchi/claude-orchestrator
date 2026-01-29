@@ -9,13 +9,14 @@ Responsibilities:
 """
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from ..plans.models import Plan, Phase, Task, TaskStatus
+from ..plans.models import Phase, Plan, Task, TaskStatus
 from ..plans.store import get_plan_store
 from .context_builder import ContextBuilder, SubagentContext
 
@@ -114,6 +115,10 @@ class TaskDelegator:
 							success=False,
 							error=f"File {file} locked by task {blocking_task}",
 						)
+
+			# Auto-fetch docs from knowledge base if none provided
+			if not docs:
+				docs = await self._fetch_knowledge_docs(task)
 
 			# Build context
 			context = self.context_builder.build_context(
@@ -244,6 +249,21 @@ class TaskDelegator:
 			logger.warning(f"Task {task_id} failed: {error}")
 
 			return True
+
+	async def _fetch_knowledge_docs(self, task: Task) -> list[dict]:
+		"""Fetch relevant docs from the knowledge base for a task."""
+		try:
+			from pathlib import Path
+			db_path = Path("data/docs_index")
+			if not db_path.exists():
+				return []
+			from ..knowledge.retriever import search_docs
+			result_str = await search_docs(task.description, max_results=5)
+			result = json.loads(result_str)
+			return result.get("results", [])
+		except Exception as e:
+			logger.debug(f"Knowledge base lookup skipped: {e}")
+			return []
 
 	def get_delegated_task(self, task_id: str) -> Optional[DelegatedTask]:
 		"""Get a delegated task by ID."""

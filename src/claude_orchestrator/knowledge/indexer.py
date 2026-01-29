@@ -279,7 +279,7 @@ class DocIndexer:
 			return
 
 		# Check if table exists
-		table_names = self.db.table_names()
+		table_names = self.db.list_tables()
 
 		if self.TABLE_NAME in table_names:
 			table = self.db.open_table(self.TABLE_NAME)
@@ -313,7 +313,7 @@ class DocIndexer:
 		Returns:
 			List of matching document chunks
 		"""
-		if self.TABLE_NAME not in self.db.table_names():
+		if self.TABLE_NAME not in self.db.list_tables():
 			return []
 
 		# Generate query embedding
@@ -337,7 +337,7 @@ class DocIndexer:
 
 	def list_sources(self) -> list[dict]:
 		"""List all indexed documentation sources."""
-		if self.TABLE_NAME not in self.db.table_names():
+		if self.TABLE_NAME not in self.db.list_tables():
 			return []
 
 		table = self.db.open_table(self.TABLE_NAME)
@@ -364,7 +364,7 @@ class DocIndexer:
 
 	def get_document(self, source_file: str) -> Optional[str]:
 		"""Get the full content of a document by file path."""
-		if self.TABLE_NAME not in self.db.table_names():
+		if self.TABLE_NAME not in self.db.list_tables():
 			return None
 
 		table = self.db.open_table(self.TABLE_NAME)

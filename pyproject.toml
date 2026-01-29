@@ -40,6 +40,7 @@ knowledge = [
 	"aiohttp>=3.9.0",
 	"markdownify>=0.11.0",
 	"beautifulsoup4>=4.12.0",
+	"pandas>=2.0.0",
 ]
 all = [
 	"claude-orchestrator[visual,knowledge]",

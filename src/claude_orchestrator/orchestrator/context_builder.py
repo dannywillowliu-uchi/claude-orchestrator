@@ -10,9 +10,8 @@ Responsible for:
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
-from ..plans.models import Plan, Phase, Task, Decision
+from ..plans.models import Decision, Plan, Task
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +54,19 @@ class SubagentContext:
 			for d in self.relevant_decisions:
 				lines.append(f"- **{d.get('decision')}**: {d.get('rationale')}")
 			lines.append("")
+
+		if self.relevant_docs:
+			lines.append("### Relevant Documentation:")
+			for doc in self.relevant_docs:
+				title = doc.get("title", "Untitled")
+				section = doc.get("section", "")
+				content = doc.get("content", "")
+				header = f"**{title}**"
+				if section:
+					header += f" > {section}"
+				lines.append(header)
+				lines.append(content[:1000])
+				lines.append("")
 
 		if self.prior_work_summary:
 			lines.append("### Prior Work Summary:")
