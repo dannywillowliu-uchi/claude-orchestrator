@@ -278,6 +278,19 @@ class Planner:
 			"has_draft_plan": session.draft_plan is not None,
 		}
 
+	# Phrases that indicate a vague or uncertain answer
+	VAGUE_INDICATORS = [
+		"not sure",
+		"don't know",
+		"maybe",
+		"i guess",
+		"no idea",
+		"unsure",
+		"haven't decided",
+		"tbd",
+		"unclear",
+	]
+
 	def _generate_follow_ups(
 		self,
 		session: PlanningSession,
@@ -285,9 +298,32 @@ class Planner:
 		answer: str,
 	) -> list[dict]:
 		"""Generate follow-up questions based on an answer."""
-		# Disabled follow-ups for cleaner flow - the initial questions are comprehensive
-		# Enable this for more thorough interactive planning sessions
-		return []
+		follow_ups = []
+		answer_lower = answer.lower().strip()
+
+		# Detect vague/uncertain answers
+		is_vague = any(indicator in answer_lower for indicator in self.VAGUE_INDICATORS)
+
+		if is_vague:
+			# Find the original question for context
+			original = next((q for q in session.questions if q.id == question_id), None)
+			if original:
+				follow_ups.append({
+					"category": original.category,
+					"question": (
+						f"You mentioned uncertainty about: '{original.question}' "
+						f"-- Can you describe what you do know, even partially?"
+					),
+				})
+				follow_ups.append({
+					"category": original.category,
+					"question": (
+						"Would it help to explore options? "
+						"What constraints would narrow down the answer?"
+					),
+				})
+
+		return follow_ups
 
 	async def _generate_draft_plan(self, session: PlanningSession) -> Plan:
 		"""Generate a draft plan using Claude CLI based on Q&A answers."""

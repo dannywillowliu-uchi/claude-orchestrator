@@ -112,7 +112,14 @@ class Verifier:
 		results = []
 
 		for check in checks:
-			result = await self._run_check(check, files_changed)
+			try:
+				result = await self._run_check(check, files_changed)
+			except asyncio.TimeoutError:
+				result = CheckResult(
+					name=check,
+					status=CheckStatus.ERROR,
+					output=f"Check '{check}' timed out",
+				)
 			results.append(result)
 
 		# Overall pass if all checks pass

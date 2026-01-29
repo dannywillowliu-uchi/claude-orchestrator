@@ -183,7 +183,10 @@ class Supervisor:
 				return False
 
 		# Default: auto-approve safe operations
-		return self._is_safe_operation(request)
+		approved = self._is_safe_operation(request)
+		state.approval_pending = None
+		state.status = SupervisionStatus.MONITORING
+		return approved
 
 	def _is_safe_operation(self, request: dict) -> bool:
 		"""Check if an operation is safe to auto-approve."""
