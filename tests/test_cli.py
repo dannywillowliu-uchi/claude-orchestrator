@@ -10,15 +10,17 @@ from unittest.mock import patch
 import pytest
 
 from claude_orchestrator.cli import (
+	DEFAULT_SEED_SOURCES,
+	PERMISSION_RULE,
 	_check_config_toml,
 	_check_optional_extras,
 	_check_secrets_json,
 	_get_bundled_claude_md,
-	_install_claude_md,
+	_inject_claude_code_permissions,
 	_inject_mcp_config,
+	_install_claude_md,
 	cmd_doctor,
 	cmd_init_project,
-	DEFAULT_SEED_SOURCES,
 	cmd_seed_docs,
 	main,
 )
@@ -257,6 +259,77 @@ class TestInitProject:
 	def test_init_project_subparser_registered(self):
 		"""init-project subparser should be registered in the CLI."""
 		with patch("sys.argv", ["claude-orchestrator", "init-project", "--help"]):
+			with pytest.raises(SystemExit) as exc_info:
+				main()
+			assert exc_info.value.code == 0
+
+
+class TestInjectClaudeCodePermissions:
+	"""Tests for Claude Code permission injection."""
+
+	def test_creates_settings_file(self, tmp_path: Path):
+		"""Should create settings.json if it doesn't exist."""
+		settings = tmp_path / ".claude" / "settings.json"
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			_inject_claude_code_permissions()
+		assert settings.exists()
+		data = json.loads(settings.read_text())
+		assert PERMISSION_RULE in data["permissions"]["allow"]
+
+	def test_adds_to_existing_file(self, tmp_path: Path):
+		"""Should append permission to existing settings without clobbering."""
+		settings_dir = tmp_path / ".claude"
+		settings_dir.mkdir()
+		settings = settings_dir / "settings.json"
+		existing = {
+			"permissions": {
+				"allow": ["Bash(git:*)"],
+				"deny": [],
+			},
+			"someOtherKey": True,
+		}
+		settings.write_text(json.dumps(existing))
+
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			_inject_claude_code_permissions()
+
+		data = json.loads(settings.read_text())
+		assert "Bash(git:*)" in data["permissions"]["allow"]
+		assert PERMISSION_RULE in data["permissions"]["allow"]
+		assert data["someOtherKey"] is True
+
+	def test_idempotent(self, tmp_path: Path):
+		"""Should not duplicate the permission rule."""
+		settings_dir = tmp_path / ".claude"
+		settings_dir.mkdir()
+		settings = settings_dir / "settings.json"
+		existing = {"permissions": {"allow": [PERMISSION_RULE]}}
+		settings.write_text(json.dumps(existing))
+
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			_inject_claude_code_permissions()
+
+		data = json.loads(settings.read_text())
+		count = data["permissions"]["allow"].count(PERMISSION_RULE)
+		assert count == 1
+
+	def test_adds_missing_permissions_key(self, tmp_path: Path):
+		"""Should handle settings file with no permissions key."""
+		settings_dir = tmp_path / ".claude"
+		settings_dir.mkdir()
+		settings = settings_dir / "settings.json"
+		settings.write_text(json.dumps({"hooks": {}}))
+
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			_inject_claude_code_permissions()
+
+		data = json.loads(settings.read_text())
+		assert PERMISSION_RULE in data["permissions"]["allow"]
+		assert data["hooks"] == {}
+
+	def test_allow_permissions_subparser_registered(self):
+		"""allow-permissions subparser should be registered in the CLI."""
+		with patch("sys.argv", ["claude-orchestrator", "allow-permissions", "--help"]):
 			with pytest.raises(SystemExit) as exc_info:
 				main()
 			assert exc_info.value.code == 0

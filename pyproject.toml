@@ -61,9 +61,9 @@ dev = [
 [project.scripts]
 claude-orchestrator = "claude_orchestrator.cli:main"
 
-# [project.urls]
-# Homepage = "https://github.com/YOUR_USERNAME/claude-orchestrator"
-# Repository = "https://github.com/YOUR_USERNAME/claude-orchestrator"
+[project.urls]
+Homepage = "https://github.com/dannywillowliu-uchi/claude-orchestrator"
+Repository = "https://github.com/dannywillowliu-uchi/claude-orchestrator"
 
 [tool.setuptools.packages.find]
 where = ["src"]

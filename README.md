@@ -19,9 +19,13 @@ The net effect: you describe what you want, approve a plan, and Claude executes 
 ## Quick Start
 
 ```bash
-# 1. Install
-pip install claude-orchestrator          # core only
-pip install claude-orchestrator[all]     # all optional modules (recommended)
+# 1. Install (from GitHub)
+pip install git+https://github.com/dannywillowliu-uchi/claude-orchestrator.git          # core only
+pip install "claude-orchestrator[all] @ git+https://github.com/dannywillowliu-uchi/claude-orchestrator.git"  # all extras
+
+# Or from PyPI (when available)
+# pip install claude-orchestrator
+# pip install claude-orchestrator[all]
 
 # 2. Run setup wizard
 claude-orchestrator setup
@@ -30,7 +34,9 @@ claude-orchestrator setup
 claude-orchestrator doctor
 ```
 
-The setup wizard creates config directories, writes a default config, injects the MCP server entry into Claude Code / Claude Desktop, installs a `CLAUDE.md` into your projects, and runs a health check to verify everything works.
+The setup wizard creates config directories, writes a default config, injects the MCP server entry into Claude Code / Claude Desktop, auto-accepts MCP tool permissions so Claude Code won't prompt for each tool call, installs a `CLAUDE.md` into your projects, and runs a health check to verify everything works.
+
+> **Permissions:** During setup, `mcp__claude-orchestrator__*` is added to `~/.claude/settings.json` under `permissions.allow`. This lets Claude Code call all orchestrator tools without per-tool approval prompts. You can also run `claude-orchestrator allow-permissions` independently to add this rule.
 
 ### First Steps After Setup
 
@@ -133,6 +139,7 @@ Environment variable overrides (`CLAUDE_ORCHESTRATOR_*`):
 ```bash
 claude-orchestrator setup              # Interactive setup wizard
 claude-orchestrator setup --check      # Verify current config
+claude-orchestrator allow-permissions  # Auto-accept MCP permissions in Claude Code
 claude-orchestrator serve              # Run MCP server (used by Claude)
 claude-orchestrator doctor             # Health check (exits non-zero on issues)
 claude-orchestrator init-project .     # Install CLAUDE.md into current project
@@ -191,7 +198,7 @@ This means one or more checks failed. Review the issue list at the bottom of the
 ## Development
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/dannywillowliu-uchi/claude-orchestrator.git
 cd claude-orchestrator
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,all]"

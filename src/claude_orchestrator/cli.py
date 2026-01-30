@@ -83,11 +83,50 @@ def _detect_claude_desktop_config() -> Path | None:
 	return path if path.exists() else None
 
 
+PERMISSION_RULE = "mcp__claude-orchestrator__*"
+
 MCP_ENTRY = {
 	"type": "stdio",
 	"command": "claude-orchestrator",
 	"args": ["serve"],
 }
+
+
+def _inject_claude_code_permissions() -> bool:
+	"""Inject mcp__claude-orchestrator__* into Claude Code permissions.allow.
+
+	Reads ~/.claude/settings.json (creates with default structure if missing),
+	appends the permission rule if not already present, and writes back.
+	Returns True if the rule was added or already existed.
+	"""
+	settings_path = Path.home() / ".claude" / "settings.json"
+	try:
+		if settings_path.exists():
+			with open(settings_path) as f:
+				data = json.load(f)
+		else:
+			data = {}
+
+		if "permissions" not in data:
+			data["permissions"] = {}
+		if "allow" not in data["permissions"]:
+			data["permissions"]["allow"] = []
+
+		allow_list = data["permissions"]["allow"]
+		if PERMISSION_RULE in allow_list:
+			print(f"  Permission already configured: {PERMISSION_RULE}")
+			return True
+
+		allow_list.append(PERMISSION_RULE)
+		settings_path.parent.mkdir(parents=True, exist_ok=True)
+		with open(settings_path, "w") as f:
+			json.dump(data, f, indent="\t")
+			f.write("\n")
+		print(f"  Added permission: {PERMISSION_RULE}")
+		return True
+	except (json.JSONDecodeError, IOError) as e:
+		print(f"  Failed to update {settings_path}: {e}")
+		return False
 
 
 def _inject_mcp_config(config_path: Path) -> bool:
@@ -147,7 +186,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 	if not toml_path.exists():
 		toml_path.write_text(
 			'# claude-orchestrator configuration\n'
-			'# See: https://github.com/YOUR_USERNAME/claude-orchestrator\n'
+			'# See: https://github.com/dannywillowliu-uchi/claude-orchestrator\n'
 			'\n'
 			'# projects_path = "~/personal_projects"\n'
 		)
@@ -176,6 +215,10 @@ def cmd_setup(args: argparse.Namespace) -> None:
 			_inject_mcp_config(claude_desktop)
 	else:
 		print("  Claude Desktop config: not detected")
+
+	print()
+	print("  Auto-accepting MCP permissions in Claude Code...")
+	_inject_claude_code_permissions()
 	print()
 
 	# Step 4: Install CLAUDE.md for Claude Code integration
@@ -283,6 +326,14 @@ def cmd_setup_check() -> None:
 		print("  Some paths are missing. Run 'claude-orchestrator setup' to configure.")
 	else:
 		print("  All paths configured.")
+
+
+def cmd_allow_permissions(args: argparse.Namespace) -> None:
+	"""Add MCP permission rule to Claude Code settings."""
+	print("claude-orchestrator allow-permissions")
+	print(f"{'=' * 40}")
+	print()
+	_inject_claude_code_permissions()
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -627,6 +678,10 @@ def main() -> None:
 	setup_parser = subparsers.add_parser("setup", help="Interactive setup wizard")
 	setup_parser.add_argument("--check", action="store_true", help="Check current config")
 	setup_parser.set_defaults(func=cmd_setup)
+
+	# allow-permissions
+	perms_parser = subparsers.add_parser("allow-permissions", help="Auto-accept MCP permissions in Claude Code")
+	perms_parser.set_defaults(func=cmd_allow_permissions)
 
 	# serve
 	serve_parser = subparsers.add_parser("serve", help="Run MCP server (stdio)")
