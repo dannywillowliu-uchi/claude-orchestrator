@@ -101,7 +101,7 @@ If you prefer not to use the setup wizard:
    pip install claude-orchestrator[all]     # all optional modules
    ```
 
-2. Add to your Claude Code MCP config (`~/.claude/claude_code_config.json`):
+2. Add to your Claude Code config (`~/.claude.json`), under the root-level `mcpServers` key:
    ```json
    {
      "mcpServers": {

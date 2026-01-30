@@ -50,18 +50,16 @@ DEFAULT_SEED_SOURCES = [
 ]
 
 
-def _detect_claude_code_config() -> Path | None:
-	"""Detect Claude Code MCP settings file."""
+def _detect_claude_code_config() -> Path:
+	"""Detect Claude Code MCP config file.
+
+	Claude Code stores MCP servers in ~/.claude.json under the root-level
+	"mcpServers" key. Returns the path to that file (creates if needed during
+	injection).
+	"""
 	home = Path.home()
-	candidates = [
-		home / ".claude" / "claude_code_config.json",
-		home / ".claude.json",
-	]
-	for path in candidates:
-		if path.exists():
-			return path
-	# Default location even if it doesn't exist yet
-	return home / ".claude" / "claude_code_config.json"
+	path = home / ".claude.json"
+	return path
 
 
 def _detect_claude_desktop_config() -> Path | None:
@@ -199,13 +197,11 @@ def cmd_setup(args: argparse.Namespace) -> None:
 	print("[3/7] MCP configuration")
 
 	claude_code = _detect_claude_code_config()
-	if claude_code:
-		print(f"  Claude Code config: {claude_code}")
-		response = input("  Add claude-orchestrator to Claude Code? [Y/n] ").strip().lower()
-		if response in ("", "y", "yes"):
-			_inject_mcp_config(claude_code)
-	else:
-		print("  Claude Code config: not found")
+	exists_label = "" if claude_code.exists() else " (will be created)"
+	print(f"  Claude Code config: {claude_code}{exists_label}")
+	response = input("  Add claude-orchestrator to Claude Code? [Y/n] ").strip().lower()
+	if response in ("", "y", "yes"):
+		_inject_mcp_config(claude_code)
 
 	claude_desktop = _detect_claude_desktop_config()
 	if claude_desktop:
@@ -472,7 +468,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 
 	# MCP config injection
 	claude_code = _detect_claude_code_config()
-	if claude_code and claude_code.exists():
+	if claude_code.exists():
 		try:
 			with open(claude_code) as f:
 				data = json.load(f)
@@ -484,7 +480,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 		except (json.JSONDecodeError, IOError):
 			print("  Claude Code:  config file unreadable")
 	else:
-		print("  Claude Code:  config not found")
+		print(f"  Claude Code:  {claude_code} not found (run setup to create)")
 
 	print()
 	if issues:
