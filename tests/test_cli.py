@@ -18,9 +18,11 @@ from claude_orchestrator.cli import (
 	_get_bundled_claude_md,
 	_inject_claude_code_permissions,
 	_inject_mcp_config,
+	_install_agents,
 	_install_claude_md,
 	cmd_doctor,
 	cmd_init_project,
+	cmd_install_agents,
 	cmd_seed_docs,
 	main,
 )
@@ -346,3 +348,62 @@ class TestDoctorExitCode:
 			with pytest.raises(SystemExit) as exc_info:
 				cmd_doctor(args)
 			assert exc_info.value.code == 1
+
+
+class TestInstallAgents:
+	"""Tests for custom agent installation."""
+
+	def test_installs_agents_to_target(self, tmp_path: Path):
+		"""Should copy bundled agent .md files to target directory."""
+		agents_dir = tmp_path / ".claude" / "agents"
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			results = _install_agents()
+
+		assert agents_dir.exists()
+		installed = [name for name, ok, _ in results if ok]
+		assert len(installed) == 10
+		# Verify actual files exist
+		for name in installed:
+			assert (agents_dir / name).exists()
+			content = (agents_dir / name).read_text()
+			assert len(content) > 0
+
+	def test_skips_existing_files(self, tmp_path: Path):
+		"""Should skip files that already exist without --force."""
+		agents_dir = tmp_path / ".claude" / "agents"
+		agents_dir.mkdir(parents=True)
+		(agents_dir / "code-reviewer.md").write_text("custom content")
+
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			results = _install_agents(force=False)
+
+		skipped = [name for name, ok, _ in results if not ok]
+		assert "code-reviewer.md" in skipped
+		# Original content preserved
+		assert (agents_dir / "code-reviewer.md").read_text() == "custom content"
+
+	def test_force_overwrites_existing(self, tmp_path: Path):
+		"""Should overwrite existing files when force=True."""
+		agents_dir = tmp_path / ".claude" / "agents"
+		agents_dir.mkdir(parents=True)
+		(agents_dir / "code-reviewer.md").write_text("custom content")
+
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			results = _install_agents(force=True)
+
+		installed = [name for name, ok, _ in results if ok]
+		assert "code-reviewer.md" in installed
+		assert (agents_dir / "code-reviewer.md").read_text() != "custom content"
+
+	def test_install_agents_subparser_registered(self):
+		"""install-agents subparser should be registered in the CLI."""
+		with patch("sys.argv", ["claude-orchestrator", "install-agents", "--help"]):
+			with pytest.raises(SystemExit) as exc_info:
+				main()
+			assert exc_info.value.code == 0
+
+	def test_cmd_install_agents(self, tmp_path: Path):
+		"""cmd_install_agents should call _install_agents and print results."""
+		args = argparse.Namespace(force=False)
+		with patch("claude_orchestrator.cli.Path.home", return_value=tmp_path):
+			cmd_install_agents(args)

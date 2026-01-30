@@ -34,6 +34,33 @@ def _install_claude_md(target_dir: Path) -> tuple[bool, str]:
 	return True, f"Created: {target}"
 
 
+def _install_agents(force: bool = False) -> list[tuple[str, bool, str]]:
+	"""Install bundled agent .md files to ~/.claude/agents/.
+
+	Returns list of (filename, installed, message) tuples.
+	If force=True, overwrites existing files.
+	"""
+	import importlib.resources as resources
+
+	agents_dir = Path.home() / ".claude" / "agents"
+	agents_dir.mkdir(parents=True, exist_ok=True)
+
+	results: list[tuple[str, bool, str]] = []
+	agents_pkg = resources.files("claude_orchestrator").joinpath("agents")
+	for item in agents_pkg.iterdir():
+		if not item.name.endswith(".md"):
+			continue
+		target = agents_dir / item.name
+		if target.exists() and not force:
+			results.append((item.name, False, f"Skipped (exists): {target}"))
+			continue
+		content = item.read_text(encoding="utf-8")
+		target.write_text(content, encoding="utf-8")
+		action = "Overwrote" if target.exists() and force else "Installed"
+		results.append((item.name, True, f"{action}: {target}"))
+	return results
+
+
 DEFAULT_SEED_SOURCES = [
 	{
 		"name": "anthropic-docs",
@@ -166,7 +193,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
 	# Step 1: Create directories + show extras status
 	config = load_config()
-	print("[1/7] Directories & extras")
+	print("[1/8] Directories & extras")
 	print(f"  Config: {config.config_dir}")
 	print(f"  Data:   {config.data_dir}")
 	print()
@@ -188,13 +215,13 @@ def cmd_setup(args: argparse.Namespace) -> None:
 			'\n'
 			'# projects_path = "~/personal_projects"\n'
 		)
-		print(f"[2/7] Config file created: {toml_path}")
+		print(f"[2/8] Config file created: {toml_path}")
 	else:
-		print(f"[2/7] Config file exists: {toml_path}")
+		print(f"[2/8] Config file exists: {toml_path}")
 	print()
 
 	# Step 3: Detect and inject MCP config
-	print("[3/7] MCP configuration")
+	print("[3/8] MCP configuration")
 
 	claude_code = _detect_claude_code_config()
 	exists_label = "" if claude_code.exists() else " (will be created)"
@@ -218,7 +245,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 	print()
 
 	# Step 4: Install CLAUDE.md for Claude Code integration
-	print("[4/7] Claude Code project instructions (CLAUDE.md)")
+	print("[4/8] Claude Code project instructions (CLAUDE.md)")
 	print("  The orchestrator ships a CLAUDE.md that teaches Claude Code how to")
 	print("  use planning sessions, verification gates, Telegram notifications,")
 	print("  and other orchestrator tools automatically.")
@@ -254,8 +281,25 @@ def cmd_setup(args: argparse.Namespace) -> None:
 		print(f"  to install CLAUDE.md into any project later.")
 	print()
 
-	# Step 5: Seed knowledge base
-	print("[5/7] Knowledge base seeding")
+	# Step 5: Install custom agents
+	print("[5/8] Claude Code custom agents")
+	print("  The orchestrator ships 10 custom agents for code review, testing,")
+	print("  security scanning, and more.")
+	print()
+	response = input("  Install custom agents to ~/.claude/agents/? [Y/n] ").strip().lower()
+	if response in ("", "y", "yes"):
+		results = _install_agents()
+		installed = sum(1 for _, ok, _ in results if ok)
+		skipped = sum(1 for _, ok, _ in results if not ok)
+		for _, _, msg in results:
+			print(f"  {msg}")
+		print(f"  Done: {installed} installed, {skipped} skipped")
+	else:
+		print("  Skipped. Run 'claude-orchestrator install-agents' later.")
+	print()
+
+	# Step 6: Seed knowledge base
+	print("[6/8] Knowledge base seeding")
 	try:
 		from .knowledge import retriever as _  # noqa: F401
 		response = input("  Seed documentation knowledge base? [y/N] ").strip().lower()
@@ -265,8 +309,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
 		print("  Skipped (install knowledge extras: pip install claude-orchestrator[knowledge])")
 	print()
 
-	# Step 6: Run doctor to verify
-	print("[6/7] Verification")
+	# Step 7: Run doctor to verify
+	print("[7/8] Verification")
 	print()
 	try:
 		cmd_doctor(argparse.Namespace())
@@ -274,8 +318,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
 		pass  # doctor may exit(1) on issues, don't propagate during setup
 	print()
 
-	# Step 7: Next steps
-	print("[7/7] Next steps")
+	# Step 8: Next steps
+	print("[8/8] Next steps")
 	next_steps = []
 	if missing_extras:
 		next_steps.append(f"  Install extras: pip install claude-orchestrator[all]")
@@ -516,6 +560,25 @@ def cmd_init_project(args: argparse.Namespace) -> None:
 		print("Commit CLAUDE.md to your repo so collaborators get the same setup.")
 
 
+def cmd_install_agents(args: argparse.Namespace) -> None:
+	"""Install bundled custom agents to ~/.claude/agents/."""
+	force = getattr(args, "force", False)
+	print("claude-orchestrator install-agents")
+	print(f"{'=' * 40}")
+	print()
+
+	results = _install_agents(force=force)
+	for _, _, msg in results:
+		print(f"  {msg}")
+
+	installed = sum(1 for _, ok, _ in results if ok)
+	skipped = sum(1 for _, ok, _ in results if not ok)
+	print()
+	print(f"  {installed} installed, {skipped} skipped")
+	if skipped and not force:
+		print("  Use --force to overwrite existing files.")
+
+
 def cmd_seed_docs(args: argparse.Namespace) -> None:
 	"""Seed the knowledge base by crawling and indexing documentation sources."""
 	try:
@@ -686,6 +749,14 @@ def main() -> None:
 	# doctor
 	doctor_parser = subparsers.add_parser("doctor", help="Health check")
 	doctor_parser.set_defaults(func=cmd_doctor)
+
+	# install-agents
+	agents_parser = subparsers.add_parser(
+		"install-agents",
+		help="Install custom agents to ~/.claude/agents/",
+	)
+	agents_parser.add_argument("--force", action="store_true", help="Overwrite existing agent files")
+	agents_parser.set_defaults(func=cmd_install_agents)
 
 	# init-project
 	init_parser = subparsers.add_parser(
