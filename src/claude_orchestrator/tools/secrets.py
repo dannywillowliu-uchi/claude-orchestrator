@@ -52,6 +52,10 @@ def register_secrets_tools(mcp: FastMCP, config: Config) -> None:
 			})
 
 		secret = keys[key_name]
+		# Handle legacy format where value is a plain string
+		if isinstance(secret, str):
+			return json.dumps({"key": secret, "notes": ""})
+
 		if not secret.get("active", True):
 			return json.dumps({
 				"error": f"Secret '{key_name}' is inactive",
@@ -75,12 +79,21 @@ def register_secrets_tools(mcp: FastMCP, config: Config) -> None:
 
 		result = []
 		for name, data in keys.items():
-			result.append({
-				"name": name,
-				"active": data.get("active", True),
-				"notes": data.get("notes", ""),
-				"has_value": bool(data.get("key")),
-			})
+			# Handle legacy format where value is a plain string
+			if isinstance(data, str):
+				result.append({
+					"name": name,
+					"active": True,
+					"notes": "",
+					"has_value": bool(data),
+				})
+			else:
+				result.append({
+					"name": name,
+					"active": data.get("active", True),
+					"notes": data.get("notes", ""),
+					"has_value": bool(data.get("key")),
+				})
 
 		return json.dumps({
 			"secrets": result,
@@ -130,6 +143,10 @@ def register_secrets_tools(mcp: FastMCP, config: Config) -> None:
 		if key_name not in keys:
 			return json.dumps({"error": f"Secret '{key_name}' not found"})
 
+		# Migrate legacy string format to dict
+		if isinstance(keys[key_name], str):
+			keys[key_name] = {"key": keys[key_name], "active": True, "notes": ""}
+
 		keys[key_name]["active"] = False
 		_save_secrets(config.secrets_file, secrets)
 
@@ -151,6 +168,10 @@ def register_secrets_tools(mcp: FastMCP, config: Config) -> None:
 
 		if key_name not in keys:
 			return json.dumps({"error": f"Secret '{key_name}' not found"})
+
+		# Migrate legacy string format to dict
+		if isinstance(keys[key_name], str):
+			keys[key_name] = {"key": keys[key_name], "active": True, "notes": ""}
 
 		keys[key_name]["active"] = True
 		_save_secrets(config.secrets_file, secrets)
