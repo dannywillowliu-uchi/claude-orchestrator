@@ -16,13 +16,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from tests.orchestration.framework import (
+from tests.framework import (
 	OrchestrationTestFramework,
 	OrchestrationPhase,
 	OrchestrationResult,
 	create_simple_test_framework,
 )
-from tests.orchestration.visualizer import Visualizer
+from tests.visualizer import Visualizer
 
 
 # Sample planning answers for tests

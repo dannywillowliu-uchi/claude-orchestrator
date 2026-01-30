@@ -613,5 +613,5 @@ async def create_simple_test_framework(
 		working_dir=working_dir,
 		use_mocks=use_mocks,
 		verbose=False,
-		cleanup_on_exit=True,
+		cleanup_on_exit=False,
 	)
