@@ -13,39 +13,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from claude_orchestrator.orchestrator.planner import Planner, PlanningPhase
-from claude_orchestrator.orchestrator.verifier import CheckResult, CheckStatus
 from claude_orchestrator.plans.models import PlanStatus
 from claude_orchestrator.plans.store import PlanStore
 from claude_orchestrator.tools.worktree import register_worktree_tools
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _init_git_repo(path: Path) -> None:
-	"""Initialize a real git repo with one commit."""
-	path.mkdir(parents=True, exist_ok=True)
-	subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
-	subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
-	subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
-	(path / "README.md").write_text("# Test Project\n")
-	subprocess.run(["git", "add", "README.md"], cwd=str(path), capture_output=True, check=True)
-	subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True, check=True)
-
-
-def _capture_tools(config: MagicMock) -> dict:
-	"""Register worktree tools on a mock MCP and return captured tool fns."""
-	captured = {}
-
-	class MockMCP:
-		def tool(self):
-			def decorator(fn):
-				captured[fn.__name__] = fn
-				return fn
-			return decorator
-
-	register_worktree_tools(MockMCP(), config)
-	return captured
+from .helpers import capture_tools, init_git_repo
 
 
 async def _drive_planner_to_approval(
@@ -154,7 +126,7 @@ class TestExecutePlanE2E:
 	@pytest.fixture
 	def git_project(self, tmp_path: Path) -> Path:
 		proj = tmp_path / "test-project"
-		_init_git_repo(proj)
+		init_git_repo(proj)
 		(proj / "CLAUDE.md").write_text("# Instructions\n## Gotchas & Learnings\n")
 		return proj
 
@@ -172,7 +144,7 @@ class TestExecutePlanE2E:
 	def tools(self, tmp_path: Path):
 		config = MagicMock()
 		config.projects_path = tmp_path
-		return _capture_tools(config)
+		return capture_tools(config, register_worktree_tools)
 
 	@pytest.mark.asyncio
 	async def test_creates_worktree_with_correct_branch(
@@ -310,7 +282,7 @@ class TestCleanupEdgeCases:
 		from claude_orchestrator.tools.worktree import _derive_worktree_path
 
 		repo = tmp_path / "test-project"
-		_init_git_repo(repo)
+		init_git_repo(repo)
 
 		plan = Plan(
 			id="cleanup-test-id",
@@ -328,7 +300,7 @@ class TestCleanupEdgeCases:
 
 		config = MagicMock()
 		config.projects_path = tmp_path
-		tools = _capture_tools(config)
+		tools = capture_tools(config, register_worktree_tools)
 
 		store = AsyncMock()
 		store.get_plan.return_value = plan
@@ -375,128 +347,3 @@ class TestCleanupEdgeCases:
 		assert result["success"] is True
 		assert not env["wt"].exists()
 
-
-# ---------------------------------------------------------------------------
-# TestVerificationGotchaIntegration
-# ---------------------------------------------------------------------------
-
-class TestVerificationGotchaIntegration:
-	"""Test that run_verification auto-logs gotchas on failure."""
-
-	def _capture_orchestrator_tools(self):
-		from claude_orchestrator.tools.orchestrator import register_orchestrator_tools
-
-		captured = {}
-
-		class MockMCP:
-			def tool(self):
-				def decorator(fn):
-					captured[fn.__name__] = fn
-					return fn
-				return decorator
-
-		register_orchestrator_tools(MockMCP(), MagicMock())
-		return captured
-
-	def _make_mock_verifier(self, checks: list[CheckResult], passed: bool = False):
-		mock_result = MagicMock()
-		mock_result.passed = passed
-		mock_result.summary = f"{'all passed' if passed else 'failures found'}"
-		mock_result.can_retry = not passed
-		mock_result.verified_at = "2026-02-02T00:00:00"
-		mock_result.checks = checks
-
-		mock_cls = MagicMock()
-		mock_cls.return_value.verify = AsyncMock(return_value=mock_result)
-		return mock_cls
-
-	@pytest.mark.asyncio
-	async def test_failed_ruff_logs_gotcha_to_claude_md(self, tmp_path: Path):
-		proj = tmp_path / "proj"
-		proj.mkdir()
-		claude_md = proj / "CLAUDE.md"
-		claude_md.write_text("# Project\n\n## Gotchas & Learnings\n\n")
-
-		tools = self._capture_orchestrator_tools()
-		verifier_cls = self._make_mock_verifier([
-			CheckResult(name="ruff", status=CheckStatus.FAILED,
-				output="src/foo.py:1:1 E501 Line too long\nsrc/bar.py:3:1 F841 Unused"),
-		])
-
-		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
-			result = json.loads(await tools["run_verification"](project_path=str(proj)))
-
-		assert result["passed"] is False
-		assert "gotchas_logged" in result
-		assert any("E501" in g for g in result["gotchas_logged"])
-
-		# Verify CLAUDE.md was actually modified
-		content = claude_md.read_text()
-		assert content != "# Project\n\n## Gotchas & Learnings\n\n"
-
-	@pytest.mark.asyncio
-	async def test_multiple_failures_log_multiple_gotchas(self, tmp_path: Path):
-		proj = tmp_path / "proj"
-		proj.mkdir()
-		(proj / "CLAUDE.md").write_text("# P\n\n## Gotchas & Learnings\n\n")
-
-		tools = self._capture_orchestrator_tools()
-		verifier_cls = self._make_mock_verifier([
-			CheckResult(name="ruff", status=CheckStatus.FAILED,
-				output="x.py:1:1 E501 too long"),
-			CheckResult(name="mypy", status=CheckStatus.FAILED,
-				output="x.py:1: error: Bad type\nFound 1 error in 1 file"),
-			CheckResult(name="pytest", status=CheckStatus.PASSED, output="3 passed"),
-		])
-
-		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
-			result = json.loads(await tools["run_verification"](project_path=str(proj)))
-
-		gotchas = result["gotchas_logged"]
-		assert len(gotchas) == 2  # ruff + mypy, not pytest (it passed)
-
-	@pytest.mark.asyncio
-	async def test_passing_verification_logs_no_gotchas(self, tmp_path: Path):
-		proj = tmp_path / "proj"
-		proj.mkdir()
-
-		tools = self._capture_orchestrator_tools()
-		verifier_cls = self._make_mock_verifier(
-			[CheckResult(name="pytest", status=CheckStatus.PASSED, output="5 passed")],
-			passed=True,
-		)
-
-		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
-			result = json.loads(await tools["run_verification"](project_path=str(proj)))
-
-		assert result["passed"] is True
-		assert "gotchas_logged" not in result
-
-	@pytest.mark.asyncio
-	async def test_no_project_path_skips_gotcha_logging(self, tmp_path: Path):
-		"""Gotchas require project_path to know where CLAUDE.md is."""
-		tools = self._capture_orchestrator_tools()
-		verifier_cls = self._make_mock_verifier([
-			CheckResult(name="ruff", status=CheckStatus.FAILED,
-				output="x.py:1:1 E501 too long"),
-		])
-
-		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
-			result = json.loads(await tools["run_verification"](project_path=""))
-
-		assert result["passed"] is False
-		assert "gotchas_logged" not in result
-
-
-# ---------------------------------------------------------------------------
-# TestMCPToolRegistration
-# ---------------------------------------------------------------------------
-
-class TestMCPToolRegistration:
-	def test_execute_plan_registered(self):
-		from claude_orchestrator.server import mcp
-		assert "execute_plan" in mcp._tool_manager._tools
-
-	def test_cleanup_worktree_registered(self):
-		from claude_orchestrator.server import mcp
-		assert "cleanup_worktree" in mcp._tool_manager._tools

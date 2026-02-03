@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import shlex
 import shutil
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from ..plans.store import get_plan_store
 logger = logging.getLogger(__name__)
 
 
-async def _run_git(args: list[str], cwd: Path) -> tuple[str, str, int]:
+async def _run_git(args: list[str], cwd: Path, timeout: int = 30) -> tuple[str, str, int]:
 	"""Run a git command and return (stdout, stderr, returncode)."""
 	proc = await asyncio.create_subprocess_exec(
 		"git", *args,
@@ -24,7 +25,11 @@ async def _run_git(args: list[str], cwd: Path) -> tuple[str, str, int]:
 		stderr=asyncio.subprocess.PIPE,
 		cwd=str(cwd),
 	)
-	stdout, stderr = await proc.communicate()
+	try:
+		stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+	except asyncio.TimeoutError:
+		proc.kill()
+		return ("", f"git {args[0]} timed out after {timeout}s", -1)
 	return (
 		stdout.decode().strip(),
 		stderr.decode().strip(),
@@ -149,7 +154,8 @@ def _derive_worktree_path(
 ) -> tuple[Path, str]:
 	"""Derive worktree path and branch name from a plan."""
 	slug = _slugify(plan.overview.goal)
-	dir_name = f"{plan.project}-{slug}-{plan.id[:6]}"
+	project_slug = _slugify(plan.project, max_len=30)
+	dir_name = f"{project_slug}-{slug}-{plan.id[:6]}"
 	worktree_path = git_root.parent / dir_name
 	branch_name = f"plan/{plan.id}"
 	return worktree_path, branch_name
@@ -183,9 +189,20 @@ def register_worktree_tools(mcp: FastMCP, config: Config) -> None:
 			})
 
 		# Resolve project path
-		proj_path = Path(project_path).expanduser() if project_path else config.projects_path / plan.project
+		if project_path:
+			proj_path = Path(project_path).expanduser().resolve()
+		else:
+			proj_path = config.projects_path / plan.project
 		if not proj_path.is_dir():
 			return json.dumps({"success": False, "error": f"Project directory not found: {proj_path}"})
+		# Path containment check: must be under config.projects_path
+		try:
+			proj_path.relative_to(config.projects_path.resolve())
+		except ValueError:
+			return json.dumps({
+				"success": False,
+				"error": f"Project path must be under {config.projects_path}",
+			})
 
 		# Find git root
 		try:
@@ -223,7 +240,7 @@ def register_worktree_tools(mcp: FastMCP, config: Config) -> None:
 			except Exception as e:
 				logger.warning(f"Failed to update plan status: {e}")
 
-		command = f"cd {worktree_path} && claude"
+		command = f"cd {shlex.quote(str(worktree_path))} && claude"
 
 		return json.dumps({
 			"success": True,
@@ -241,7 +258,7 @@ def register_worktree_tools(mcp: FastMCP, config: Config) -> None:
 		}, indent=2)
 
 	@mcp.tool()
-	async def cleanup_worktree(plan_id: str, delete_branch: bool = True) -> str:
+	async def cleanup_worktree(plan_id: str, project_path: str = "", delete_branch: bool = True) -> str:
 		"""
 		Remove a git worktree created for plan execution.
 
@@ -249,6 +266,7 @@ def register_worktree_tools(mcp: FastMCP, config: Config) -> None:
 
 		Args:
 			plan_id: The plan ID whose worktree to remove
+			project_path: Optional project root override
 			delete_branch: Whether to also delete the plan branch (default True)
 		"""
 		store = await get_plan_store()
@@ -256,9 +274,21 @@ def register_worktree_tools(mcp: FastMCP, config: Config) -> None:
 		if not plan:
 			return json.dumps({"success": False, "error": f"Plan not found: {plan_id}"})
 
-		proj_path = config.projects_path / plan.project
+		# Resolve project path
+		if project_path:
+			proj_path = Path(project_path).expanduser().resolve()
+		else:
+			proj_path = config.projects_path / plan.project
 		if not proj_path.is_dir():
 			return json.dumps({"success": False, "error": f"Project directory not found: {proj_path}"})
+		# Path containment check
+		try:
+			proj_path.relative_to(config.projects_path.resolve())
+		except ValueError:
+			return json.dumps({
+				"success": False,
+				"error": f"Project path must be under {config.projects_path}",
+			})
 
 		try:
 			git_root = await _find_git_root(proj_path)
