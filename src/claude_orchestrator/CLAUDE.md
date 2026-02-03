@@ -80,3 +80,14 @@ Use `log_project_decision`, `log_project_gotcha`, and `log_global_learning` tool
 4. Get approval with `telegram_request_approval` before implementation
 5. Execute phase-by-phase, calling `telegram_phase_update` after each
 6. Run `run_verification` before every commit
+
+## Worktree Execution
+
+After plan approval, use `execute_plan(plan_id)` to create an isolated git worktree.
+This returns a terminal command to run in a new tab. Do NOT execute the plan in the
+current conversation -- always use a separate worktree session.
+
+The worktree contains `.claude-plan-context.md` with the full plan, decisions,
+and execution instructions for the implementer Claude session.
+
+After completion, use `cleanup_worktree(plan_id)` to remove the worktree and branch.

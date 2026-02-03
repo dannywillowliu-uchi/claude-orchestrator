@@ -41,6 +41,7 @@ def test_server_tool_names():
 		"check_github_security",
 		"list_claude_sessions", "start_claude_session", "stop_claude_session",
 		"send_to_claude_session", "get_session_output", "approve_session_action",
+		"execute_plan", "cleanup_worktree",
 	}
 
 	missing_core = expected_core - tool_names
