@@ -240,7 +240,10 @@ def register_worktree_tools(mcp: FastMCP, config: Config) -> None:
 			except Exception as e:
 				logger.warning(f"Failed to update plan status: {e}")
 
-		command = f"cd {shlex.quote(str(worktree_path))} && claude"
+		# Build initial prompt for descriptive session naming
+		goal_short = plan.overview.goal[:60].replace('"', '\\"')
+		initial_prompt = f"[{plan.project}] {goal_short} - Read .claude-plan-context.md to begin."
+		command = f"cd {shlex.quote(str(worktree_path))} && claude -p {shlex.quote(initial_prompt)}"
 
 		return json.dumps({
 			"success": True,
