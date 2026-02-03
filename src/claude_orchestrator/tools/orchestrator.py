@@ -14,6 +14,45 @@ from ..orchestrator.verifier import CheckResult, CheckStatus, Verifier
 
 logger = logging.getLogger(__name__)
 
+# Patterns that warrant multi-agent consensus review
+SECURITY_PATTERNS = {"auth", "security", "crypt", "password", "token", "secret", "credential", "permission"}
+ARCHITECTURE_PATTERNS = {"config", "settings", "init", "main", "core", "base", "registry"}
+
+
+def _should_recommend_consensus_review(files_changed: list[str] | None) -> tuple[bool, str]:
+	"""Determine if consensus review should be recommended based on changed files."""
+	if not files_changed:
+		return False, ""
+
+	file_count = len(files_changed)
+	reasons = []
+
+	# Check for security-sensitive files
+	security_files = []
+	for f in files_changed:
+		f_lower = f.lower()
+		if any(pattern in f_lower for pattern in SECURITY_PATTERNS):
+			security_files.append(f)
+	if security_files:
+		reasons.append(f"security-sensitive files: {', '.join(security_files[:3])}")
+
+	# Check for architecture files
+	arch_files = []
+	for f in files_changed:
+		f_lower = f.lower()
+		if any(pattern in f_lower for pattern in ARCHITECTURE_PATTERNS):
+			arch_files.append(f)
+	if arch_files:
+		reasons.append(f"architecture files: {', '.join(arch_files[:3])}")
+
+	# Multi-file changes (threshold: 5+ files)
+	if file_count >= 5:
+		reasons.append(f"{file_count} files changed (multi-file refactor)")
+
+	if reasons:
+		return True, "; ".join(reasons)
+	return False, ""
+
 
 def _derive_gotcha_from_failure(check: CheckResult) -> str | None:
 	"""Parse a verification failure into a concise gotcha string."""
@@ -235,5 +274,14 @@ def register_orchestrator_tools(mcp: FastMCP, config: Config) -> None:
 		if gotchas_logged:
 			response["gotchas_logged"] = gotchas_logged
 			response["gotcha_note"] = "Verification failures have been logged as gotchas in CLAUDE.md"
+
+		# Check if consensus review is recommended for high-stakes changes
+		recommend_review, review_reason = _should_recommend_consensus_review(files_list)
+		if recommend_review and result.passed:
+			response["recommend_consensus_review"] = True
+			response["consensus_review_reason"] = review_reason
+			response["consensus_review_note"] = (
+				"Consider running /verify-by-consensus for multi-agent review of these changes"
+			)
 
 		return json.dumps(response, indent=2)

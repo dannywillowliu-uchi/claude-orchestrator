@@ -10,7 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from claude_orchestrator.orchestrator.verifier import CheckResult, CheckStatus
-from claude_orchestrator.tools.orchestrator import _derive_gotcha_from_failure
+from claude_orchestrator.tools.orchestrator import (
+	_derive_gotcha_from_failure,
+	_should_recommend_consensus_review,
+)
 
 # ---------------------------------------------------------------------------
 # _derive_gotcha_from_failure
@@ -243,3 +246,139 @@ class TestVerificationGotchaIntegration:
 
 		assert result["passed"] is False
 		assert "gotchas_logged" not in result
+
+
+# ---------------------------------------------------------------------------
+# _should_recommend_consensus_review
+# ---------------------------------------------------------------------------
+
+class TestConsensusReviewRecommendation:
+	def test_empty_files_returns_false(self):
+		recommend, reason = _should_recommend_consensus_review(None)
+		assert recommend is False
+		assert reason == ""
+
+	def test_empty_list_returns_false(self):
+		recommend, reason = _should_recommend_consensus_review([])
+		assert recommend is False
+		assert reason == ""
+
+	def test_security_file_triggers_recommendation(self):
+		files = ["src/auth.py"]
+		recommend, reason = _should_recommend_consensus_review(files)
+		assert recommend is True
+		assert "security-sensitive" in reason
+		assert "auth.py" in reason
+
+	def test_security_patterns_case_insensitive(self):
+		files = ["src/Authentication.py", "lib/CryptoUtils.js"]
+		recommend, reason = _should_recommend_consensus_review(files)
+		assert recommend is True
+		assert "security-sensitive" in reason
+
+	def test_architecture_file_triggers_recommendation(self):
+		files = ["config.py"]
+		recommend, reason = _should_recommend_consensus_review(files)
+		assert recommend is True
+		assert "architecture" in reason
+
+	def test_multi_file_changes_triggers_recommendation(self):
+		files = [f"src/file{i}.py" for i in range(6)]
+		recommend, reason = _should_recommend_consensus_review(files)
+		assert recommend is True
+		assert "6 files changed" in reason
+
+	def test_four_files_does_not_trigger(self):
+		files = ["a.py", "b.py", "c.py", "d.py"]
+		recommend, reason = _should_recommend_consensus_review(files)
+		assert recommend is False
+
+	def test_multiple_reasons_combined(self):
+		files = ["auth.py", "config.py", "a.py", "b.py", "c.py", "d.py", "e.py"]
+		recommend, reason = _should_recommend_consensus_review(files)
+		assert recommend is True
+		assert "security-sensitive" in reason
+		assert "architecture" in reason
+		assert "7 files" in reason
+
+
+class TestRunVerificationConsensusReview(TestVerificationGotchaIntegration):
+	"""Test that run_verification recommends consensus review for high-stakes changes."""
+
+	@pytest.mark.asyncio
+	async def test_passing_with_security_files_recommends_review(self, tmp_path: Path):
+		proj = tmp_path / "proj"
+		proj.mkdir()
+
+		tools = self._capture_orchestrator_tools()
+		verifier_cls = self._make_mock_verifier(
+			[CheckResult(name="pytest", status=CheckStatus.PASSED, output="5 passed")],
+			passed=True,
+		)
+
+		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
+			result = json.loads(await tools["run_verification"](
+				project_path=str(proj),
+				files_changed="src/auth.py,src/login.py",
+			))
+
+		assert result["passed"] is True
+		assert result.get("recommend_consensus_review") is True
+		assert "security-sensitive" in result.get("consensus_review_reason", "")
+
+	@pytest.mark.asyncio
+	async def test_failing_verification_does_not_recommend_review(self, tmp_path: Path):
+		proj = tmp_path / "proj"
+		proj.mkdir()
+		(proj / "CLAUDE.md").write_text("# P\n\n## Gotchas & Learnings\n\n")
+
+		tools = self._capture_orchestrator_tools()
+		verifier_cls = self._make_mock_verifier([
+			CheckResult(name="pytest", status=CheckStatus.FAILED, output="FAILED test_auth"),
+		])
+
+		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
+			result = json.loads(await tools["run_verification"](
+				project_path=str(proj),
+				files_changed="src/auth.py",
+			))
+
+		assert result["passed"] is False
+		assert "recommend_consensus_review" not in result
+
+	@pytest.mark.asyncio
+	async def test_no_files_changed_no_recommendation(self, tmp_path: Path):
+		proj = tmp_path / "proj"
+		proj.mkdir()
+
+		tools = self._capture_orchestrator_tools()
+		verifier_cls = self._make_mock_verifier(
+			[CheckResult(name="pytest", status=CheckStatus.PASSED, output="5 passed")],
+			passed=True,
+		)
+
+		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
+			result = json.loads(await tools["run_verification"](project_path=str(proj)))
+
+		assert result["passed"] is True
+		assert "recommend_consensus_review" not in result
+
+	@pytest.mark.asyncio
+	async def test_ordinary_files_no_recommendation(self, tmp_path: Path):
+		proj = tmp_path / "proj"
+		proj.mkdir()
+
+		tools = self._capture_orchestrator_tools()
+		verifier_cls = self._make_mock_verifier(
+			[CheckResult(name="pytest", status=CheckStatus.PASSED, output="5 passed")],
+			passed=True,
+		)
+
+		with patch("claude_orchestrator.tools.orchestrator.Verifier", verifier_cls):
+			result = json.loads(await tools["run_verification"](
+				project_path=str(proj),
+				files_changed="utils.py,helpers.py",
+			))
+
+		assert result["passed"] is True
+		assert "recommend_consensus_review" not in result
