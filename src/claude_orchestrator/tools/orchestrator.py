@@ -1,12 +1,61 @@
 """Orchestrator tools - planning sessions and verification."""
 
 import json
+import logging
+import re
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from .. import project_memory
 from ..config import Config
 from ..orchestrator.planner import get_planner
-from ..orchestrator.verifier import Verifier
+from ..orchestrator.verifier import CheckResult, CheckStatus, Verifier
+
+logger = logging.getLogger(__name__)
+
+
+def _derive_gotcha_from_failure(check: CheckResult) -> str | None:
+	"""Parse a verification failure into a concise gotcha string."""
+	if not check.output:
+		return None
+
+	output = check.output[:2000]
+
+	if check.name == "ruff":
+		# Extract unique rule codes like E501, F841, I001
+		codes = set(re.findall(r"\b([A-Z]\d{3,4})\b", output))
+		if codes:
+			return f"Linting: fix {', '.join(sorted(codes))} violations before committing"
+		return "Linting: ruff check failed -- fix lint errors before committing"
+
+	if check.name == "pytest":
+		# Extract failed test names
+		failed = re.findall(r"FAILED\s+(\S+)", output)
+		if failed:
+			names = ", ".join(f[:60] for f in failed[:3])
+			suffix = f" (+{len(failed) - 3} more)" if len(failed) > 3 else ""
+			return f"Tests: fix failing tests before committing -- {names}{suffix}"
+		return "Tests: pytest failed -- fix test failures before committing"
+
+	if check.name == "mypy":
+		# Extract error count
+		error_match = re.search(r"Found (\d+) error", output)
+		count = error_match.group(1) if error_match else "multiple"
+		return f"Types: fix {count} mypy type error(s) before committing"
+
+	if check.name == "bandit":
+		# Extract severity levels
+		severities = re.findall(r"Severity:\s+(High|Medium|Low)", output)
+		if severities:
+			high = severities.count("High")
+			med = severities.count("Medium")
+			if high:
+				return f"Security: {high} high-severity bandit finding(s) -- fix before committing"
+			return f"Security: {med} medium-severity bandit finding(s) -- review before committing"
+		return "Security: bandit found issues -- review security findings before committing"
+
+	return f"Verification: {check.name} failed -- review output and fix before committing"
 
 
 def register_orchestrator_tools(mcp: FastMCP, config: Config) -> None:
@@ -157,7 +206,18 @@ def register_orchestrator_tools(mcp: FastMCP, config: Config) -> None:
 			files_changed=files_list,
 		)
 
-		return json.dumps({
+		# Auto-log gotchas for verification failures
+		gotchas_logged: list[str] = []
+		if not result.passed and project_path:
+			proj_dir = str(Path(project_path).expanduser())
+			for check in result.checks:
+				if check.status == CheckStatus.FAILED:
+					gotcha = _derive_gotcha_from_failure(check)
+					if gotcha:
+						project_memory.log_gotcha(proj_dir, "dont", gotcha)
+						gotchas_logged.append(gotcha)
+
+		response = {
 			"passed": result.passed,
 			"summary": result.summary,
 			"can_retry": result.can_retry,
@@ -171,4 +231,9 @@ def register_orchestrator_tools(mcp: FastMCP, config: Config) -> None:
 				for c in result.checks
 			],
 			"verified_at": result.verified_at,
-		}, indent=2)
+		}
+		if gotchas_logged:
+			response["gotchas_logged"] = gotchas_logged
+			response["gotcha_note"] = "Verification failures have been logged as gotchas in CLAUDE.md"
+
+		return json.dumps(response, indent=2)
