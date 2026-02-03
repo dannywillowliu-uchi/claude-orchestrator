@@ -618,6 +618,11 @@ class Planner:
 			"project": session.project,
 			"phase_count": len(plan.phases),
 			"task_count": sum(len(p.tasks) for p in plan.phases),
+			"next_step": {
+				"tool": "execute_plan",
+				"args": {"plan_id": plan_id},
+				"description": "Create a git worktree and get a terminal command to start execution in a new tab",
+			},
 		}
 
 	async def add_custom_phase(

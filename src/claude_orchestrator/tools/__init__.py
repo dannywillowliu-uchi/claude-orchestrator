@@ -14,6 +14,7 @@ from .plans import register_plans_tools
 from .secrets import register_secrets_tools
 from .sessions import register_session_tools
 from .skills import register_skills_tools
+from .worktree import register_worktree_tools
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def register_all_tools(mcp: FastMCP, config: Config) -> None:
 	register_memory_tools(mcp, config)
 	register_plans_tools(mcp, config)
 	register_orchestrator_tools(mcp, config)
+	register_worktree_tools(mcp, config)
 	register_skills_tools(mcp, config)
 	register_github_tools(mcp, config)
 	register_session_tools(mcp, config)
