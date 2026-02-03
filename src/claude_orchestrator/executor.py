@@ -1,12 +1,11 @@
 """Task executor - handles task execution with optional subagent support."""
 
-import json
 from dataclasses import dataclass
-from typing import Optional, Callable, Awaitable
 from enum import Enum
+from typing import Awaitable, Callable, Optional
 
-from .database import Database, TaskRecord, TaskStatus
 from .analyzer import TaskComplexity
+from .database import Database, TaskRecord, TaskStatus
 
 
 class ExecutionStatus(str, Enum):

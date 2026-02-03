@@ -9,7 +9,7 @@ Provides:
 
 from .crawler import DocCrawler
 from .indexer import DocIndexer
-from .retriever import search_docs, get_doc, list_doc_sources
+from .retriever import get_doc, list_doc_sources, search_docs
 
 __all__ = [
 	"DocCrawler",

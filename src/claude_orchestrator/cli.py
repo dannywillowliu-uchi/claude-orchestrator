@@ -8,11 +8,11 @@ import platform
 import re
 import sys
 from datetime import datetime, timedelta
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 
-from importlib.metadata import version as pkg_version
-
 from .config import load_config
+
 
 def _get_bundled_claude_md() -> str:
 	"""Read the bundled CLAUDE.md from the package."""
@@ -277,8 +277,8 @@ def cmd_setup(args: argparse.Namespace) -> None:
 			else:
 				print(f"  Skipped: {target}")
 	else:
-		print(f"  No project directories found. Use 'claude-orchestrator init-project <path>'")
-		print(f"  to install CLAUDE.md into any project later.")
+		print("  No project directories found. Use 'claude-orchestrator init-project <path>'")
+		print("  to install CLAUDE.md into any project later.")
 	print()
 
 	# Step 5: Install custom agents
@@ -322,7 +322,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 	print("[8/8] Next steps")
 	next_steps = []
 	if missing_extras:
-		next_steps.append(f"  Install extras: pip install claude-orchestrator[all]")
+		next_steps.append("  Install extras: pip install claude-orchestrator[all]")
 	if "knowledge" not in missing_extras:
 		# Knowledge is installed, check if seeded
 		knowledge_dir = config.data_dir / "knowledge"

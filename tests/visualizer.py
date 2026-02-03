@@ -13,15 +13,14 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any
 
 try:
+	from rich import box
 	from rich.console import Console
 	from rich.panel import Panel
-	from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+	from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 	from rich.table import Table
 	from rich.tree import Tree
-	from rich import box
 	RICH_AVAILABLE = True
 except ImportError:
 	RICH_AVAILABLE = False

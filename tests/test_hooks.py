@@ -1,16 +1,15 @@
 """Tests for hooks module - task-specific permission profiles."""
 
-import pytest
 
 from claude_orchestrator.hooks import (
-	HooksConfig,
+	CODE_EDIT,
+	FULL_ACCESS,
 	PROFILES,
 	READ_ONLY,
-	CODE_EDIT,
 	TEST_RUN,
-	FULL_ACCESS,
-	get_profile,
+	HooksConfig,
 	generate_hooks_for_task,
+	get_profile,
 )
 from claude_orchestrator.orchestrator.supervisor import Supervisor
 

@@ -13,32 +13,31 @@ Features:
 
 import asyncio
 import shutil
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from claude_orchestrator.orchestrator.planner import (
-	Planner,
-	PlanningSession,
-	PlanningPhase,
-)
 from claude_orchestrator.orchestrator.context_builder import ContextBuilder
 from claude_orchestrator.orchestrator.delegator import (
-	TaskDelegator,
-	DelegationStatus,
 	DelegatedTask,
+	TaskDelegator,
 )
-from claude_orchestrator.orchestrator.supervisor import Supervisor, SupervisionStatus
-from claude_orchestrator.orchestrator.verifier import Verifier, CheckStatus
-from claude_orchestrator.plans.models import Plan, Phase, Task, TaskStatus
-from claude_orchestrator.session_manager import SessionManager, SessionState
+from claude_orchestrator.orchestrator.planner import (
+	Planner,
+	PlanningPhase,
+	PlanningSession,
+)
+from claude_orchestrator.orchestrator.supervisor import Supervisor
+from claude_orchestrator.orchestrator.verifier import Verifier
+from claude_orchestrator.plans.models import Plan, TaskStatus
+from claude_orchestrator.session_manager import SessionManager
 
-from .visualizer import Visualizer, OutputLevel
+from .visualizer import OutputLevel, Visualizer
 
 
 class OrchestrationPhase(str, Enum):
@@ -331,7 +330,7 @@ class OrchestrationTestFramework:
 					answer,
 				)
 
-				self.visualizer.show_component("Planner", f"Processed answer", {
+				self.visualizer.show_component("Planner", "Processed answer", {
 					"phase": result.get("phase"),
 					"pending_questions": len(result.get("pending_questions", [])),
 				})
@@ -476,7 +475,7 @@ When done, confirm what files were created/modified."""
 
 		self.visualizer.show_component(
 			"ClaudeCLI",
-			f"Executing task with --print mode",
+			"Executing task with --print mode",
 			{"task_id": delegated.task.id}
 		)
 

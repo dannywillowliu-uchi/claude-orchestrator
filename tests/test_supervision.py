@@ -8,19 +8,18 @@ Tests:
 - Failure handling and escalation
 """
 
-import pytest
-import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from claude_orchestrator.orchestrator.supervisor import (
-	Supervisor,
-	SupervisionStatus,
-	Checkpoint,
-)
 from claude_orchestrator.orchestrator.delegator import TaskDelegator
+from claude_orchestrator.orchestrator.supervisor import (
+	SupervisionStatus,
+	Supervisor,
+)
 
 
 class TestSupervisionLifecycle:

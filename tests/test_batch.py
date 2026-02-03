@@ -7,7 +7,6 @@ import pytest
 from claude_orchestrator.orchestrator.batch import (
 	BatchItem,
 	BatchProcessor,
-	BatchResult,
 	BatchStatus,
 	BatchSummary,
 )

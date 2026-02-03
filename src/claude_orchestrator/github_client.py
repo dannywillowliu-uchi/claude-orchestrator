@@ -1,19 +1,14 @@
 """GitHub API Client for repository and issue management."""
 
-import os
 import logging
+import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass
-from datetime import datetime
 
-from github import Github, Auth
-from github.Repository import Repository
-from github.Issue import Issue
-from github.PullRequest import PullRequest
+from github import Auth, Github
 from github.GithubException import GithubException
-
-from .security import rate_limiter
+from github.Repository import Repository
 
 logger = logging.getLogger(__name__)
 

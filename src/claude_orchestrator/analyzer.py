@@ -1,9 +1,8 @@
 """Task feasibility analyzer - determines if Claude can complete a task."""
 
-import re
 from dataclasses import dataclass
-from typing import Optional
 from enum import Enum
+from typing import Optional
 
 
 class TaskComplexity(str, Enum):

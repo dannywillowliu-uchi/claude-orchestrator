@@ -9,7 +9,6 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
-
 VISUAL_TOOL_NAMES = [
 	"take_screenshot",
 	"take_element_screenshot",

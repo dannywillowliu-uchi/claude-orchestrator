@@ -8,24 +8,24 @@ Tests:
 - Delegation prompt generation
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from claude_orchestrator.orchestrator.context_builder import ContextBuilder, SubagentContext
 from claude_orchestrator.orchestrator.delegator import (
-	TaskDelegator,
 	DelegationStatus,
-	DelegatedTask,
+	TaskDelegator,
 )
 from claude_orchestrator.plans.models import (
-	Plan,
 	Phase,
-	Task,
+	Plan,
 	PlanOverview,
 	PlanStatus,
+	Task,
 	TaskStatus,
 )
 

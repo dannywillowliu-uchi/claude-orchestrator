@@ -1,11 +1,11 @@
 """Tests for codebase onboarding module."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from claude_orchestrator.orchestrator.onboarding import (
 	CodebaseOnboarder,
-	ProjectProfile,
 )
 
 

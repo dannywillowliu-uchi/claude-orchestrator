@@ -8,22 +8,22 @@ Note: Tests marked with @pytest.mark.slow run real Claude CLI sessions
 and may take several minutes to complete.
 """
 
-import pytest
 import asyncio
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from tests.framework import (
-	OrchestrationTestFramework,
 	OrchestrationPhase,
 	OrchestrationResult,
+	OrchestrationTestFramework,
 	create_simple_test_framework,
 )
 from tests.visualizer import Visualizer
-
 
 # Sample planning answers for tests
 SIMPLE_PLANNING_ANSWERS = {
