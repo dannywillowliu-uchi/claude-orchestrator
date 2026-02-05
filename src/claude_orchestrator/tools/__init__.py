@@ -7,6 +7,7 @@ from .context import register_context_tools
 from .core import register_core_tools
 from .memory import register_memory_tools
 from .verification import register_verification_tools
+from .workflow import register_workflow_tools
 
 
 def register_all_tools(mcp: FastMCP, config: Config) -> None:
@@ -15,3 +16,4 @@ def register_all_tools(mcp: FastMCP, config: Config) -> None:
 	register_context_tools(mcp, config)
 	register_memory_tools(mcp, config)
 	register_verification_tools(mcp, config)
+	register_workflow_tools(mcp, config)

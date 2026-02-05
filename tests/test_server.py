@@ -10,6 +10,9 @@ EXPECTED_TOOLS = {
 	"log_project_gotcha",
 	"log_global_learning",
 	"run_verification",
+	"init_project_workflow",
+	"workflow_progress",
+	"check_tools",
 }
 
 
