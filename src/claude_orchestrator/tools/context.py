@@ -1,4 +1,4 @@
-"""Personal context tools."""
+"""Project discovery tools."""
 
 import json
 
@@ -11,14 +11,6 @@ from ..context import ContextManager
 def register_context_tools(mcp: FastMCP, config: Config) -> None:
 	"""Register context management tools."""
 	context_manager = ContextManager()
-
-	@mcp.tool()
-	async def get_my_context() -> str:
-		"""
-		Get personal context including preferences, projects, and style.
-		Use this to personalize responses and understand the user's background.
-		"""
-		return context_manager.get_full_context()
 
 	@mcp.tool()
 	async def find_project(query: str) -> str:
@@ -58,14 +50,3 @@ def register_context_tools(mcp: FastMCP, config: Config) -> None:
 			"description": p.description,
 			"technologies": p.technologies,
 		} for p in ctx.projects], indent=2)
-
-	@mcp.tool()
-	async def update_context_notes(notes: str) -> str:
-		"""
-		Update personal context notes with important information to remember.
-
-		Args:
-			notes: Notes to store (replaces existing notes)
-		"""
-		context_manager.update_notes(notes)
-		return json.dumps({"success": True, "message": "Notes updated"})
