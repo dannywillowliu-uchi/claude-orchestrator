@@ -20,8 +20,5 @@ def register_core_tools(mcp: FastMCP, config: Config) -> None:
 			"server": "running",
 			"config_dir": str(config.config_dir),
 			"data_dir": str(config.data_dir),
-			"secrets_file_exists": config.secrets_file.exists(),
-			"db_exists": config.db_path.exists(),
-			"plans_db_exists": config.plans_db_path.exists(),
 		}
 		return json.dumps(status, indent=2)
