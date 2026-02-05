@@ -1,122 +1,68 @@
 # claude-orchestrator
 
-An MCP server that turns Claude Code into a structured, autonomous-capable development workflow.
+A lightweight workflow system for Claude Code that adds structured project execution through a four-document lifecycle, verification gates, and persistent project memory.
 
-## Why This Exists
+## What It Does
 
-Claude Code is powerful, but out of the box it has no persistent memory between sessions, no structured planning, no verification gates, and no way to track decisions across a multi-phase project. This means you spend time re-explaining context, re-discovering gotchas, and manually checking that code quality holds up.
+Claude Code is powerful but has no built-in structure for multi-phase projects. **claude-orchestrator** adds:
 
-**claude-orchestrator** solves this by giving Claude Code a set of MCP tools for:
-
-- **Structured planning** -- Interactive Q&A sessions that front-load 90% of the thinking before a single line of code is written. The result is a versioned, phased plan that Claude follows autonomously with minimal back-and-forth.
-- **Persistent project memory** -- Decisions, gotchas, and implementation status are written to each project's CLAUDE.md automatically. Cross-project learnings survive across sessions in a global learnings file. Context is never lost.
-- **Verification gates** -- Every commit candidate runs through pytest, ruff, mypy, and bandit automatically. Claude doesn't ship broken code because it literally can't bypass the gate.
-- **Sub-agent delegation** -- Spawn and supervise additional Claude CLI sessions for parallel workstreams, with output capture and approval routing.
-- **Knowledge indexing** -- Crawl and semantically index documentation (SDK docs, internal wikis) so Claude can search them during implementation instead of hallucinating.
-
-The net effect: you describe what you want, approve a plan, and Claude executes it phase-by-phase with quality checks at every step -- closer to a junior developer than a chat autocomplete.
+- **Four-document workflow** -- Discovery, research, planning, and execution phases tracked in `.claude-project/` with progress persistence across sessions
+- **Verification gates** -- pytest, ruff, mypy, and bandit run automatically before every commit. Failures are logged as gotchas in your project's CLAUDE.md
+- **Persistent memory** -- Decisions, gotchas, and implementation status written to CLAUDE.md automatically. Cross-project learnings stored globally
+- **Custom subagents** -- Researcher (Sonnet) and verifier (Haiku) agents for parallel research and fast checks
 
 ## Quick Start
 
 ```bash
-# 1. Install (from GitHub)
-pip install git+https://github.com/dannywillowliu-uchi/claude-orchestrator.git          # core only
-pip install "claude-orchestrator[all] @ git+https://github.com/dannywillowliu-uchi/claude-orchestrator.git"  # all extras
+# Install
+pip install git+https://github.com/dannywillowliu-uchi/claude-orchestrator.git
 
-# Or from PyPI (when available)
-# pip install claude-orchestrator
-# pip install claude-orchestrator[all]
+# Install workflow protocol, agents, and hooks into Claude Code
+claude-orchestrator install
 
-# 2. Run setup wizard
-claude-orchestrator setup
-
-# 3. Verify installation
-claude-orchestrator doctor
-```
-
-The setup wizard creates config directories, writes a default config, injects the MCP server entry into Claude Code / Claude Desktop, auto-accepts MCP tool permissions so Claude Code won't prompt for each tool call, installs a `CLAUDE.md` into your projects, and runs a health check to verify everything works.
-
-> **Permissions:** During setup, `mcp__claude-orchestrator__*` is added to `~/.claude/settings.json` under `permissions.allow`. This lets Claude Code call all orchestrator tools without per-tool approval prompts. You can also run `claude-orchestrator allow-permissions` independently to add this rule.
-
-### First Steps After Setup
-
-1. **Restart Claude Code** (or Claude Desktop) to load the new MCP server.
-2. **Initialize your projects** with orchestrator instructions:
-   ```bash
-   claude-orchestrator init-project ~/my-project
-   ```
-   This copies a `CLAUDE.md` into your project that teaches Claude Code to use planning sessions, verification gates, Telegram notifications, and other orchestrator tools automatically. **Commit it to your repo** so collaborators get the same setup.
-3. In Claude Code, try: *"Use the health_check tool to verify the orchestrator is running."*
-4. Start a planning session: *"Start a planning session for my project."*
-5. If you installed knowledge extras, seed the docs: `claude-orchestrator seed-docs`
-
-## Optional Extras
-
-The core package covers planning, verification, memory, secrets, and GitHub integration. Optional extras add more capabilities:
-
-| Extra | Install | What It Adds |
-|-------|---------|--------------|
-| `visual` | `pip install claude-orchestrator[visual]` | Screenshot capture, element verification, page content extraction (via Playwright) |
-| `knowledge` | `pip install claude-orchestrator[knowledge]` | Semantic doc search, documentation crawling & indexing (via LanceDB + sentence-transformers) |
-| `web` | `pip install claude-orchestrator[web]` | Web dashboard for observability (via Starlette + Uvicorn) |
-| `all` | `pip install claude-orchestrator[all]` | All of the above |
-
-When an extra is not installed, its tools still appear in the MCP server as stubs. Calling a stub returns a JSON error with the exact `pip install` command needed:
-
-```json
+# Add MCP server to Claude Code config (~/.claude.json)
+# Under "mcpServers":
 {
-  "error": "missing_dependency",
-  "tool": "take_screenshot",
-  "extra": "visual",
-  "install": "pip install claude-orchestrator[visual]",
-  "message": "This tool requires the 'visual' extras. Install with: pip install claude-orchestrator[visual]"
+  "claude-orchestrator": {
+    "type": "stdio",
+    "command": "claude-orchestrator",
+    "args": ["serve"]
+  }
 }
 ```
 
-## What You Get
+Restart Claude Code, then just run `claude` -- the workflow activates automatically for non-trivial tasks.
 
-### Core
-- **Interactive planning sessions** with thorough Q&A before implementation
-- **Verification gate** (pytest, ruff, mypy, bandit) to enforce quality
-- **Plan management** with phases, tasks, and versioned history
-- **Skills system** (SKILL.md discovery and execution)
-- **Project memory** (CLAUDE.md management, decisions log, gotchas)
-- **Global learnings** (cross-project patterns and preferences)
-- **Secrets management** (local key storage)
-- **Personal context** (project registry, coding preferences)
+## The Four-Document Lifecycle
 
-### Optional Modules
-- **GitHub integration** (`PyGithub`) - repos, issues, PRs, notifications
-- **Sub-agent sessions** (`pexpect`) - spawn and manage Claude CLI sessions
-- **Visual testing** (`playwright`) - screenshots, element verification, page content
-- **Knowledge base** (`lancedb`, `sentence-transformers`) - semantic doc search, crawling, indexing
+When you start a non-trivial task, the workflow creates `.claude-project/` with:
 
-## Manual Setup
+| Document | Purpose |
+|----------|---------|
+| `discover.md` | Problem statement, goals, constraints, Q&A log |
+| `research/` | Subagent research findings per topic |
+| `plan.md` | Phased plan with tasks, checkpoints, and verification criteria |
+| `progress.md` | Current phase, active task, blocked state, commit history |
 
-If you prefer not to use the setup wizard:
+The protocol guides Claude through: Discovery -> Research -> Planning -> Execution, with verification gates at each commit.
 
-1. Install:
-   ```bash
-   pip install claude-orchestrator          # core only
-   pip install claude-orchestrator[all]     # all optional modules
-   ```
+## MCP Tools (11)
 
-2. Add to your Claude Code config (`~/.claude.json`), under the root-level `mcpServers` key:
-   ```json
-   {
-     "mcpServers": {
-       "claude-orchestrator": {
-         "type": "stdio",
-         "command": "claude-orchestrator",
-         "args": ["serve"]
-       }
-     }
-   }
-   ```
+| Category | Tools |
+|----------|-------|
+| Core | `health_check` |
+| Workflow | `init_project_workflow`, `workflow_progress`, `check_tools` |
+| Verification | `run_verification` |
+| Memory | `update_project_status`, `log_project_decision`, `log_project_gotcha`, `log_global_learning` |
+| Context | `find_project`, `list_my_projects` |
 
-3. Restart Claude Code.
+## CLI Commands
 
-4. Verify: `claude-orchestrator doctor`
+```bash
+claude-orchestrator serve     # Run MCP server (used by Claude Code)
+claude-orchestrator install   # Install protocol, agents, and hooks
+claude-orchestrator install --force  # Overwrite existing files
+```
 
 ## Configuration
 
@@ -125,75 +71,13 @@ Config file location:
 - **Linux**: `~/.config/claude-orchestrator/config.toml`
 
 ```toml
-# Override default projects path
 projects_path = "~/my-projects"
 ```
 
-Environment variable overrides (`CLAUDE_ORCHESTRATOR_*`):
+Environment variable overrides:
 - `CLAUDE_ORCHESTRATOR_CONFIG_DIR`
 - `CLAUDE_ORCHESTRATOR_DATA_DIR`
 - `CLAUDE_ORCHESTRATOR_PROJECTS_PATH`
-
-## CLI Commands
-
-```bash
-claude-orchestrator setup              # Interactive setup wizard
-claude-orchestrator setup --check      # Verify current config
-claude-orchestrator allow-permissions  # Auto-accept MCP permissions in Claude Code
-claude-orchestrator serve              # Run MCP server (used by Claude)
-claude-orchestrator doctor             # Health check (exits non-zero on issues)
-claude-orchestrator init-project .     # Install CLAUDE.md into current project
-claude-orchestrator init-project ~/foo # Install CLAUDE.md into specific project
-claude-orchestrator seed-docs          # Seed knowledge base with documentation
-claude-orchestrator viz dashboard  # Terminal dashboard for observability
-claude-orchestrator viz web        # Web dashboard (requires web extras)
-```
-
-## Tools
-
-| Category | Tools |
-|----------|-------|
-| Core | `health_check` |
-| Planning Sessions | `start_planning_session`, `answer_planning_question`, `get_planning_session`, `approve_planning_session`, `list_planning_sessions` |
-| Plans | `create_plan`, `get_plan`, `get_project_plan`, `add_phase_to_plan`, `update_task_status`, `add_decision_to_plan`, `list_plans`, `get_plan_history` |
-| Verification | `run_verification` |
-| Memory | `update_project_status`, `log_project_decision`, `log_project_gotcha`, `log_global_learning` |
-| Context | `get_my_context`, `find_project`, `list_my_projects`, `update_context_notes` |
-| Secrets | `get_secret`, `list_secrets`, `set_secret`, `deactivate_secret`, `activate_secret` |
-| Skills | `list_skills`, `get_skill_details`, `create_skill_template`, `execute_skill`, `list_skill_executions` |
-| GitHub | `get_github_repos`, `get_github_issues`, `create_github_issue`, `get_github_prs`, `get_github_notifications`, `search_github_repos`, `get_github_file`, `comment_on_github_issue`, `get_github_rate_limit`, `check_github_security`, `setup_github` |
-| Sessions | `list_claude_sessions`, `start_claude_session`, `stop_claude_session`, `send_to_claude_session`, `get_session_output`, `approve_session_action` |
-| Visual | `take_screenshot`, `take_element_screenshot`, `verify_element`, `get_page_content`, `list_screenshots`, `delete_screenshot` |
-| Knowledge | `search_docs`, `get_doc`, `list_doc_sources`, `index_docs`, `crawl_and_index_docs` |
-
-## Troubleshooting
-
-### Tools not appearing in Claude Code
-
-1. Make sure the MCP config is set up: `claude-orchestrator setup --check`
-2. Restart Claude Code after adding the MCP entry.
-3. Run `claude-orchestrator doctor` to check for server startup issues.
-
-### `missing_dependency` error from a tool
-
-This means you called a tool that requires an optional extra. The error JSON includes the install command:
-
-```bash
-pip install claude-orchestrator[visual]      # for visual tools
-pip install claude-orchestrator[knowledge]   # for knowledge tools
-pip install claude-orchestrator[all]         # for everything
-```
-
-### Server won't start
-
-Run `claude-orchestrator doctor` to diagnose. Common causes:
-- Missing core dependency (check the "Core deps" section of doctor output)
-- Corrupt `config.toml` (doctor validates TOML syntax)
-- Corrupt `secrets.json` (doctor validates JSON structure)
-
-### `claude-orchestrator doctor` exits with code 1
-
-This means one or more checks failed. Review the issue list at the bottom of the output and fix each one. Re-run doctor until all checks pass.
 
 ## Development
 
@@ -201,7 +85,7 @@ This means one or more checks failed. Review the issue list at the bottom of the
 git clone https://github.com/dannywillowliu-uchi/claude-orchestrator.git
 cd claude-orchestrator
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,all]"
+pip install -e ".[dev]"
 pytest
 ruff check src/
 ```
