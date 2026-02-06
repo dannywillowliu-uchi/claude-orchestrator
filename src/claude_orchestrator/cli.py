@@ -132,9 +132,10 @@ def _install_hook(claude_dir: Path, force: bool) -> None:
 		action = "Replaced" if hook_target.exists() else "Installed"
 		print(f"  {action}: {hook_target}")
 
-	# Update settings.json with hook config
+	# Update settings.json with hook config and env vars
 	settings_path = claude_dir / "settings.json"
 	_update_hook_settings(settings_path, str(hook_target))
+	_ensure_env_settings(settings_path)
 
 
 def _update_hook_settings(settings_path: Path, hook_script: str) -> None:
@@ -180,6 +181,29 @@ def _update_hook_settings(settings_path: Path, hook_script: str) -> None:
 
 		settings_path.write_text(json.dumps(data, indent="\t") + "\n", encoding="utf-8")
 		print(f"  Added SessionStart hook to {settings_path}")
+
+	except (json.JSONDecodeError, IOError) as e:
+		print(f"  Failed to update {settings_path}: {e}")
+
+
+def _ensure_env_settings(settings_path: Path) -> None:
+	"""Ensure agent teams env var is set in settings.json."""
+	try:
+		if settings_path.exists():
+			data = json.loads(settings_path.read_text(encoding="utf-8"))
+		else:
+			data = {}
+
+		env = data.get("env", {})
+		if env.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") == "1":
+			print(f"  Agent teams env var already set in {settings_path}")
+			return
+
+		env["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] = "1"
+		data["env"] = env
+
+		settings_path.write_text(json.dumps(data, indent="\t") + "\n", encoding="utf-8")
+		print(f"  Enabled agent teams in {settings_path}")
 
 	except (json.JSONDecodeError, IOError) as e:
 		print(f"  Failed to update {settings_path}: {e}")

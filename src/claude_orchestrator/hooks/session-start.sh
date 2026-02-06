@@ -15,5 +15,12 @@ if [ -f "$PROGRESS_FILE" ]; then
 	echo "--- Workflow State ---"
 	# Output Current State section (stop at Phase History)
 	sed -n '/^## Current State/,/^## Phase History/p' "$PROGRESS_FILE" | head -20 | sed '$d'
+
+	# Show active team info if any
+	TEAM_DIR="$HOME/.claude/teams"
+	if [ -d "$TEAM_DIR" ] && [ "$(ls -A "$TEAM_DIR" 2>/dev/null)" ]; then
+		echo "Active Teams: $(ls "$TEAM_DIR" | tr '\n' ', ' | sed 's/,$//')"
+	fi
+
 	echo "---"
 fi
