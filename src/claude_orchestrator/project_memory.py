@@ -28,7 +28,7 @@ def read_file(path: Path) -> str:
 	return path.read_text(encoding="utf-8")
 
 
-def write_file(path: Path, content: str):
+def write_file(path: Path, content: str) -> None:
 	"""Write content to file."""
 	path.write_text(content, encoding="utf-8")
 
@@ -38,7 +38,7 @@ def update_implementation_status(
 	phase_completed: str = "",
 	phase_started: str = "",
 	commit_hash: str = "",
-) -> dict:
+) -> dict[str, object]:
 	"""
 	Update the Implementation Status section of a project CLAUDE.md.
 
@@ -93,7 +93,7 @@ def log_decision(
 	decision: str,
 	rationale: str,
 	alternatives: str = "",
-) -> dict:
+) -> dict[str, object]:
 	"""
 	Append a decision to the Decisions Log section.
 
@@ -135,7 +135,7 @@ def log_gotcha(
 	project_path: str,
 	gotcha_type: str,
 	description: str,
-) -> dict:
+) -> dict[str, object]:
 	"""
 	Append a gotcha/learning to the Gotchas & Learnings section.
 
@@ -184,7 +184,7 @@ def log_gotcha(
 def log_global_learning(
 	category: str,
 	content_to_add: str,
-) -> dict:
+) -> dict[str, object]:
 	"""
 	Append a learning to the global learnings file.
 

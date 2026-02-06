@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,9 @@ class CheckResult:
 	status: CheckStatus
 	output: str = ""
 	duration_seconds: float = 0.0
-	details: dict = None
+	details: Optional[dict[str, object]] = None
 
-	def __post_init__(self):
+	def __post_init__(self) -> None:
 		if self.details is None:
 			self.details = {}
 
@@ -54,7 +54,7 @@ class VerificationResult:
 	summary: str = ""
 	verified_at: str = ""
 
-	def __post_init__(self):
+	def __post_init__(self) -> None:
 		if not self.verified_at:
 			self.verified_at = datetime.now().isoformat()
 
@@ -95,8 +95,8 @@ class Verifier:
 
 	async def verify(
 		self,
-		checks: list[str] = None,
-		files_changed: list[str] = None,
+		checks: Optional[list[str]] = None,
+		files_changed: Optional[list[str]] = None,
 	) -> VerificationResult:
 		"""
 		Run verification suite.
@@ -140,7 +140,7 @@ class Verifier:
 	async def _run_check(
 		self,
 		check: str,
-		files_changed: list[str] = None,
+		files_changed: Optional[list[str]] = None,
 	) -> CheckResult:
 		"""Run a single verification check."""
 		datetime.now()
@@ -173,7 +173,7 @@ class Verifier:
 				output=str(e),
 			)
 
-	async def _run_pytest(self, files_changed: list[str] = None) -> CheckResult:
+	async def _run_pytest(self, files_changed: Optional[list[str]] = None) -> CheckResult:
 		"""Run pytest."""
 		cmd = [str(self.venv_path / "bin" / "pytest"), "-v", "--tb=short"]
 
@@ -190,11 +190,7 @@ class Verifier:
 
 		result = await self._run_command(cmd)
 
-		# Parse pytest output
-		"passed" in result["output"].lower()
-		failed = "failed" in result["output"].lower() or "error" in result["output"].lower()
-
-		if result["returncode"] == 0 and not failed:
+		if result["returncode"] == 0:
 			status = CheckStatus.PASSED
 		elif result["returncode"] == 5:  # No tests collected
 			status = CheckStatus.SKIPPED
@@ -211,7 +207,7 @@ class Verifier:
 			},
 		)
 
-	async def _run_ruff(self, files_changed: list[str] = None) -> CheckResult:
+	async def _run_ruff(self, files_changed: Optional[list[str]] = None) -> CheckResult:
 		"""Run ruff linter."""
 		cmd = [str(self.venv_path / "bin" / "ruff"), "check"]
 
@@ -241,7 +237,7 @@ class Verifier:
 			},
 		)
 
-	async def _run_mypy(self, files_changed: list[str] = None) -> CheckResult:
+	async def _run_mypy(self, files_changed: Optional[list[str]] = None) -> CheckResult:
 		"""Run mypy type checker."""
 		cmd = [
 			str(self.venv_path / "bin" / "mypy"),
@@ -274,7 +270,7 @@ class Verifier:
 			},
 		)
 
-	async def _run_bandit(self, files_changed: list[str] = None) -> CheckResult:
+	async def _run_bandit(self, files_changed: Optional[list[str]] = None) -> CheckResult:
 		"""Run bandit security scanner."""
 		cmd = [
 			str(self.venv_path / "bin" / "bandit"),
@@ -313,7 +309,7 @@ class Verifier:
 			},
 		)
 
-	async def _run_command(self, cmd: list[str]) -> dict:
+	async def _run_command(self, cmd: list[str]) -> dict[str, Any]:
 		"""Run a command asynchronously."""
 		start = datetime.now()
 
@@ -405,8 +401,8 @@ _verifier: Optional[Verifier] = None
 
 
 def get_verifier(
-	project_path: str = None,
-	venv_path: str = None,
+	project_path: Optional[str] = None,
+	venv_path: Optional[str] = None,
 ) -> Verifier:
 	"""Get or create the global verifier instance."""
 	global _verifier

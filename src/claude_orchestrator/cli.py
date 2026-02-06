@@ -148,17 +148,27 @@ def _update_hook_settings(settings_path: Path, hook_script: str) -> None:
 		if "hooks" not in data:
 			data["hooks"] = {}
 
+		# New matcher-group format required by Claude Code
 		hook_entry = {
-			"type": "command",
-			"command": hook_script,
+			"matcher": "",
+			"hooks": [
+				{
+					"type": "command",
+					"command": hook_script,
+				}
+			],
 		}
 
-		# Check if our hook is already configured
+		# Check if our hook is already configured (look inside nested hooks arrays)
 		session_hooks = data["hooks"].get("SessionStart", [])
 		already_configured = any(
-			h.get("command") == hook_script
-			for h in session_hooks
-			if isinstance(h, dict)
+			any(
+				inner.get("command") == hook_script
+				for inner in group.get("hooks", [])
+				if isinstance(inner, dict)
+			)
+			for group in session_hooks
+			if isinstance(group, dict)
 		)
 
 		if already_configured:

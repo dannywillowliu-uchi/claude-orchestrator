@@ -26,7 +26,9 @@ def test_server_has_tools():
 	"""Server should register the expected number of tools."""
 	from claude_orchestrator.server import mcp
 	tools = mcp._tool_manager._tools
-	assert len(tools) == len(EXPECTED_TOOLS), f"Expected {len(EXPECTED_TOOLS)} tools, got {len(tools)}: {set(tools.keys())}"
+	assert len(tools) == len(EXPECTED_TOOLS), (
+		f"Expected {len(EXPECTED_TOOLS)} tools, got {len(tools)}: {set(tools.keys())}"
+	)
 
 
 def test_server_tool_names():
