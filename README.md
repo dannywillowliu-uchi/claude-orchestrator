@@ -76,6 +76,18 @@ Teams are enabled automatically during `claude-orchestrator install` (sets `CLAU
 
 The protocol gracefully falls back to individual subagents when teams are unavailable or when the task doesn't warrant the overhead.
 
+## Playground Integration
+
+The workflow protocol integrates with the `/playground` skill to generate interactive single-file HTML explorers at key phases:
+
+| Template | Phase | Purpose |
+|----------|-------|---------|
+| `concept-map` | Discovery | Visually map problem domains and explore scope |
+| `code-map` | Planning | Visualize architecture, data flow, and dependencies |
+| `diff-review` | Verification | Line-by-line visual review for large changesets |
+
+Playgrounds are optional -- the protocol suggests them when visual exploration adds value over plain text.
+
 ## Configuration
 
 Config file location:

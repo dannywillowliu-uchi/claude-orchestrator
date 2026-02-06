@@ -31,9 +31,10 @@ When starting a new feature or significant change:
 
 1. Open `.claude-project/discover.md`
 2. Fill in Problem Statement, Goals, Non-Goals, and Constraints through Q&A with the user
-3. Record every question and answer in the Q&A Log section
-4. Discovery is complete when: problem is well-defined, goals are measurable, constraints are documented, and user confirms understanding
-5. Update progress: `workflow_progress(phase_completed="Discovery", phase_started="Research")`
+3. For complex problem spaces, consider generating a concept-map playground (`/playground`) to visually map the domain, identify knowledge gaps, and explore scope before committing to goals
+4. Record every question and answer in the Q&A Log section
+5. Discovery is complete when: problem is well-defined, goals are measurable, constraints are documented, and user confirms understanding
+6. Update progress: `workflow_progress(phase_completed="Discovery", phase_started="Research")`
 
 ### Research Phase
 
@@ -67,13 +68,14 @@ When the task requires understanding unfamiliar domains or APIs:
 Synthesize discovery + research into an actionable plan:
 
 1. Write `.claude-project/plan.md` with phases, tasks, and verification criteria
-2. Each phase should specify:
+2. For architecture-heavy plans, consider generating a code-map playground (`/playground`) to visualize component relationships, data flow, and layer dependencies before finalizing the plan
+3. Each phase should specify:
    - `checkpoint: true/false` (whether to pause for user review)
    - `tools_required: [list]` (verify with `check_tools` before starting)
    - `verification_criteria: [list]` (what must pass before phase is complete)
-3. Present the plan to the user for review and iterate until approved
-4. Use `EnterPlanMode` for complex plans requiring user sign-off
-5. Update progress: `workflow_progress(phase_completed="Planning", phase_started="Phase 1 - <name>")`
+4. Present the plan to the user for review and iterate until approved
+5. Use `EnterPlanMode` for complex plans requiring user sign-off
+6. Update progress: `workflow_progress(phase_completed="Planning", phase_started="Phase 1 - <name>")`
 
 ### Execution Phase
 
@@ -112,7 +114,8 @@ For high-stakes changes (security-sensitive code, architecture shifts, multi-fil
    - **Correctness**: Verify logic, edge cases, error handling
 3. Spawn 2-3 reviewer teammates (Task tool with `team_name`, `subagent_type: "code-reviewer"`)
 4. Each reviewer independently analyzes the changes and messages findings to the lead
-5. Lead collates findings by consensus:
+5. For large diffs, consider generating a diff-review playground (`/playground`) to enable visual line-by-line code review alongside team reviewer findings
+6. Lead collates findings by consensus:
    - **Common** (found by all reviewers): high confidence, must address
    - **Majority** (found by 2+ reviewers): likely valid, investigate
    - **Exclusive** (found by one reviewer): cross-check before acting
@@ -147,6 +150,21 @@ Standard lifecycle for agent teams within the workflow:
 - Don't broadcast when a DM suffices
 - Don't leave teams running after work is done
 - Don't use teams when tasks have sequential dependencies (use subagents instead)
+
+### Playground Integration
+
+The `/playground` skill generates interactive single-file HTML explorers for visual exploration. Use playgrounds when visual/interactive output adds clarity over plain text.
+
+| Template | Workflow Phase | Use Case |
+|----------|---------------|----------|
+| `concept-map` | Discovery | Map problem domains, identify knowledge gaps, explore scope |
+| `code-map` | Planning | Visualize component relationships, data flow, dependencies |
+| `diff-review` | Verification | Line-by-line visual code review for large changesets |
+| `design-playground` | Any | Explore UI/design options interactively |
+| `data-explorer` | Research | Visualize data structures or API response shapes |
+| `document-critique` | Any | Review and annotate documents or specs |
+
+Playgrounds are optional. Default to plain text unless the task involves complex relationships, large diffs, or visual design that benefit from interactive exploration.
 
 ### Model Tier Guidance
 

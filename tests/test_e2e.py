@@ -157,6 +157,35 @@ def test_protocol_includes_team_guidance():
 	assert "Anti-patterns" in protocol
 
 
+def test_protocol_includes_playground_guidance():
+	"""protocol.md should contain playground integration guidance."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	# Playground section exists
+	assert "### Playground Integration" in protocol
+	assert "/playground" in protocol
+
+	# Phase-specific guidance
+	assert "concept-map" in protocol
+	assert "code-map" in protocol
+	assert "diff-review" in protocol
+
+	# Discovery phase reference
+	assert "visually map the domain" in protocol
+
+	# Planning phase reference
+	assert "visualize component relationships" in protocol
+
+	# Verification phase reference
+	assert "visual line-by-line code review" in protocol
+
+
 def test_gotcha_deduplication(tmp_path: Path):
 	"""log_gotcha should skip duplicates instead of appending them again."""
 	claude_md = tmp_path / "CLAUDE.md"

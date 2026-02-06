@@ -1,6 +1,6 @@
 # claude-orchestrator - Claude Code Project Instructions
 
-Lightweight workflow system for Claude Code with 11 MCP tools.
+Lightweight workflow system for Claude Code with 11 MCP tools. Supports `/playground` skill for visual exploration during discovery, planning, and verification phases.
 
 ## Workflow
 
