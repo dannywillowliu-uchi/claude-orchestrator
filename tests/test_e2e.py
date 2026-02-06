@@ -1,6 +1,5 @@
 """End-to-end tests for the workflow system."""
 
-import json
 from pathlib import Path
 
 from claude_orchestrator.workflow import (

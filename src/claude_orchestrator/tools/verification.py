@@ -122,8 +122,8 @@ def register_verification_tools(mcp: FastMCP, config: Config) -> None:
 		files_list = [f.strip() for f in files_changed.split(",")] if files_changed else None
 
 		result = await verifier.verify(
-			checks=check_list,  # type: ignore[arg-type]
-			files_changed=files_list,  # type: ignore[arg-type]
+			checks=check_list,
+			files_changed=files_list,
 		)
 
 		# Auto-log gotchas for verification failures
