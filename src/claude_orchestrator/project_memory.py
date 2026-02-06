@@ -174,6 +174,11 @@ def log_gotcha(
 	if section_end == -1:
 		section_end = len(content)
 
+	# Deduplicate: skip if an identical gotcha already exists in the section
+	section_text = content[match.end():section_end]
+	if new_line.strip() in section_text:
+		return {"success": True, "message": "Gotcha already exists, skipped duplicate"}
+
 	# Insert before the next section
 	new_content = content[:section_end] + new_line + content[section_end:]
 	write_file(claude_md, new_content)

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from claude_orchestrator.workflow import (
 	WORKFLOW_DIR,
 	check_tool_availability,
@@ -122,6 +124,20 @@ def test_check_tool_availability():
 	assert result["tools"]["git"] == "available"
 	assert result["tools"]["nonexistent_tool_xyz"] == "not found"
 	assert result["all_available"] is False
+
+
+def test_check_tool_availability_venv(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"):
+	"""check_tool_availability should find tools in .venv/bin/."""
+	# Create a fake .venv/bin/sometool
+	venv_bin = tmp_path / ".venv" / "bin"
+	venv_bin.mkdir(parents=True)
+	(venv_bin / "sometool").touch()
+
+	monkeypatch.chdir(tmp_path)
+	result = check_tool_availability(["sometool"])
+
+	assert result["tools"]["sometool"] == "available (venv)"
+	assert result["all_available"] is True
 
 
 def test_check_tool_availability_mcp():

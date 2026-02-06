@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from claude_orchestrator.project_memory import log_gotcha
 from claude_orchestrator.workflow import (
 	WORKFLOW_DIR,
 	check_tool_availability,
@@ -122,3 +123,26 @@ def test_workflow_state_parsing(tmp_path: Path):
 	assert state.has_discover is True
 	assert state.has_plan is True
 	assert state.has_progress is True
+
+
+def test_gotcha_deduplication(tmp_path: Path):
+	"""log_gotcha should skip duplicates instead of appending them again."""
+	claude_md = tmp_path / "CLAUDE.md"
+	claude_md.write_text(
+		"# Project\n\n## Gotchas & Learnings\n\n## Other\n",
+		encoding="utf-8",
+	)
+
+	# First log
+	result1 = log_gotcha(str(tmp_path), "dont", "Use naive string matching")
+	assert result1["success"] is True
+	assert "skipped" not in result1.get("message", "")
+
+	# Duplicate log
+	result2 = log_gotcha(str(tmp_path), "dont", "Use naive string matching")
+	assert result2["success"] is True
+	assert "skipped" in result2["message"]
+
+	# Verify only one entry exists
+	content = claude_md.read_text(encoding="utf-8")
+	assert content.count("Use naive string matching") == 1
