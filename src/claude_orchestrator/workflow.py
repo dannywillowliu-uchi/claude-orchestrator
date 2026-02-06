@@ -252,8 +252,13 @@ def check_tool_availability(tools_required: list[str]) -> dict[str, object]:
 		if _is_mcp_tool(tool):
 			results[tool] = "mcp (assumed available)"
 		else:
-			available = shutil.which(tool) is not None
-			results[tool] = "available" if available else "not found"
+			# Check PATH first, then fall back to .venv/bin/
+			if shutil.which(tool) is not None:
+				results[tool] = "available"
+			elif (Path(".venv") / "bin" / tool).exists():
+				results[tool] = "available (venv)"
+			else:
+				results[tool] = "not found"
 
 	all_available = all(v != "not found" for v in results.values())
 
