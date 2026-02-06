@@ -48,6 +48,16 @@ Update the project CLAUDE.md automatically:
 - When user says "avoid X" or similar: Append to Gotchas section
 - After discovering issues: Append to Gotchas section
 
+## Agent Teams (Experimental)
+
+The workflow protocol supports Claude Code's native agent teams for:
+- **Team research**: 3+ topics explored in parallel with debate between researchers
+- **Team-based verification**: Multi-perspective code review with consensus scoring
+
+Teams are optional and additive. The protocol falls back to subagents when teams are unavailable. Enable via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (set automatically by `claude-orchestrator install`).
+
+Custom team agents: `research-lead`, `review-lead` (coordinate teams); `researcher`, `code-reviewer` (team-aware teammates).
+
 ## Autonomy Boundaries
 
 - Default iteration limit: 5 attempts on a failing approach, then escalate

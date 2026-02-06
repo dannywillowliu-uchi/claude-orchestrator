@@ -10,6 +10,7 @@ Claude Code is powerful but has no built-in structure for multi-phase projects. 
 - **Verification gates** -- pytest, ruff, mypy, and bandit run automatically before every commit. Failures are logged as gotchas in your project's CLAUDE.md
 - **Persistent memory** -- Decisions, gotchas, and implementation status written to CLAUDE.md automatically. Cross-project learnings stored globally
 - **Custom subagents** -- Researcher (Sonnet) and verifier (Haiku) agents for parallel research and fast checks
+- **Agent teams** -- (Experimental) Team-based research and multi-perspective code review using Claude Code's native agent coordination
 
 ## Quick Start
 
@@ -63,6 +64,17 @@ claude-orchestrator serve     # Run MCP server (used by Claude Code)
 claude-orchestrator install   # Install protocol, agents, and hooks
 claude-orchestrator install --force  # Overwrite existing files
 ```
+
+## Agent Teams (Experimental)
+
+The workflow protocol supports Claude Code's native agent teams for richer multi-agent patterns:
+
+- **Team research**: When 3+ research topics need parallel exploration with debate. A research lead coordinates researcher teammates who can challenge each other's findings.
+- **Team-based verification**: Multi-perspective code review where reviewers independently analyze changes from security, architecture, and correctness angles. Findings are collated by consensus.
+
+Teams are enabled automatically during `claude-orchestrator install` (sets `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in settings). To disable, remove the env var from `~/.claude/settings.json`.
+
+The protocol gracefully falls back to individual subagents when teams are unavailable or when the task doesn't warrant the overhead.
 
 ## Configuration
 

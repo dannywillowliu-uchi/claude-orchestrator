@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from claude_orchestrator.cli import _install_protocol, _update_hook_settings
+from claude_orchestrator.cli import _ensure_env_settings, _install_protocol, _update_hook_settings
 
 
 def test_install_adds_protocol(tmp_path: Path):
@@ -103,3 +103,38 @@ def test_hook_settings_detects_existing_nested_hook(tmp_path: Path, capsys):
 
 	captured = capsys.readouterr()
 	assert "already configured" in captured.out
+
+
+def test_ensure_env_settings_adds_agent_teams(tmp_path: Path):
+	"""_ensure_env_settings should add agent teams env var to settings.json."""
+	settings_path = tmp_path / "settings.json"
+
+	_ensure_env_settings(settings_path)
+
+	data = json.loads(settings_path.read_text(encoding="utf-8"))
+	assert data["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] == "1"
+
+
+def test_ensure_env_settings_preserves_existing(tmp_path: Path):
+	"""_ensure_env_settings should not overwrite existing env vars."""
+	settings_path = tmp_path / "settings.json"
+	existing = {"env": {"MY_VAR": "hello"}, "hooks": {}}
+	settings_path.write_text(json.dumps(existing), encoding="utf-8")
+
+	_ensure_env_settings(settings_path)
+
+	data = json.loads(settings_path.read_text(encoding="utf-8"))
+	assert data["env"]["MY_VAR"] == "hello"
+	assert data["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] == "1"
+
+
+def test_ensure_env_settings_skips_if_already_set(tmp_path: Path, capsys):
+	"""_ensure_env_settings should skip if env var already set."""
+	settings_path = tmp_path / "settings.json"
+	existing = {"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}}
+	settings_path.write_text(json.dumps(existing), encoding="utf-8")
+
+	_ensure_env_settings(settings_path)
+
+	captured = capsys.readouterr()
+	assert "already set" in captured.out

@@ -125,6 +125,38 @@ def test_workflow_state_parsing(tmp_path: Path):
 	assert state.has_progress is True
 
 
+def test_protocol_includes_team_guidance():
+	"""protocol.md should contain team-related sections."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	# Section 1.1: Team vs Subagent Decision
+	assert "### Team vs Subagent Decision" in protocol
+	assert "Use Subagents" in protocol
+	assert "Use Teams" in protocol
+
+	# Section 1.2: Team Research option
+	assert "#### Option B: Team Research" in protocol
+	assert "TeamCreate" in protocol
+
+	# Section 1.3: Team-Based Verification
+	assert "### Team-Based Verification" in protocol
+	assert "consensus" in protocol.lower()
+
+	# Section 1.4: Model Tier Guidance includes teams
+	assert "Team teammates" in protocol
+	assert "Team lead" in protocol
+
+	# Section 1.5: Team Lifecycle
+	assert "### Team Lifecycle" in protocol
+	assert "Anti-patterns" in protocol
+
+
 def test_gotcha_deduplication(tmp_path: Path):
 	"""log_gotcha should skip duplicates instead of appending them again."""
 	claude_md = tmp_path / "CLAUDE.md"
