@@ -154,7 +154,7 @@ def test_protocol_includes_team_guidance():
 
 	# Section 1.5: Team Lifecycle
 	assert "### Team Lifecycle" in protocol
-	assert "Anti-patterns" in protocol
+	assert "Constraints (NEVER violate)" in protocol
 
 
 def test_protocol_includes_playground_guidance():
@@ -184,6 +184,43 @@ def test_protocol_includes_playground_guidance():
 
 	# Verification phase reference
 	assert "visual line-by-line code review" in protocol
+
+
+def test_protocol_constraints_language():
+	"""protocol.md should use constraint-based language (MUST/NEVER/NO) for rules."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	# 1.1: Constraint-based language for rules
+	assert "MUST be initialized" in protocol
+	assert "Each phase MUST specify" in protocol
+	assert "No execution proceeds without user approval" in protocol
+	assert "MUST execute before any commit" in protocol
+	assert "MUST be updated before any phase transition" in protocol
+	assert "MUST NOT remain running" in protocol
+	assert "Constraints (NEVER violate)" in protocol
+	assert "NO teams for < 3 parallel tasks" in protocol
+	assert "NO broadcasts when DM suffices" in protocol
+	assert "NO teams left running after completion" in protocol
+	assert "NO teams for sequential dependencies" in protocol
+
+	# 1.2: Context Freshness section
+	assert "### Context Freshness" in protocol
+	assert "MUST reflect only current phase" in protocol
+	assert "NO modifications once Discovery phase is complete" in protocol
+	assert "Immutable once execution begins" in protocol
+
+	# 1.3: Tiered error handling
+	assert "Verification Gate (MANDATORY before every commit)" in protocol
+	assert "Critical" in protocol
+	assert "Non-critical" in protocol
+	assert "Self-correction principle" in protocol
+	assert "Escalation criteria" in protocol
 
 
 def test_gotcha_deduplication(tmp_path: Path):

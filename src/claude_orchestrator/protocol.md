@@ -7,7 +7,7 @@ This protocol governs how you approach non-trivial tasks. It activates when `.cl
 1. Check if `.claude-project/` exists in the project root
 2. If it exists, read `progress.md` to understand current state
 3. If the task is trivial (single-file fix, typo, < 3 steps), skip the workflow
-4. If the task is non-trivial, ensure `.claude-project/` is initialized via `init_project_workflow`
+4. If the task is non-trivial, `.claude-project/` MUST be initialized via `init_project_workflow` before proceeding
 
 ### Team vs Subagent Decision
 
@@ -69,11 +69,11 @@ Synthesize discovery + research into an actionable plan:
 
 1. Write `.claude-project/plan.md` with phases, tasks, and verification criteria
 2. For architecture-heavy plans, consider generating a code-map playground (`/playground`) to visualize component relationships, data flow, and layer dependencies before finalizing the plan
-3. Each phase should specify:
+3. Each phase MUST specify:
    - `checkpoint: true/false` (whether to pause for user review)
    - `tools_required: [list]` (verify with `check_tools` before starting)
    - `verification_criteria: [list]` (what must pass before phase is complete)
-4. Present the plan to the user for review and iterate until approved
+4. No execution proceeds without user approval of the plan
 5. Use `EnterPlanMode` for complex plans requiring user sign-off
 6. Update progress: `workflow_progress(phase_completed="Planning", phase_started="Phase 1 - <name>")`
 
@@ -85,23 +85,34 @@ For each phase in the plan:
 2. Run `check_tools` for any phase-specific tool requirements
 3. Implement tasks sequentially within the phase
 4. After all tasks in a phase are complete:
-   a. Run `run_verification` with the project path
+   a. `run_verification` MUST execute before any commit
    b. If verification fails, fix issues (up to 3 attempts), then start a fresh session
    c. If verification passes, commit the changes
    d. Update progress: `workflow_progress(phase_completed="Phase N", phase_started="Phase N+1", commit_hash="...")`
 5. If the phase has `checkpoint: true`, stop and wait for user confirmation
 
-### Verification Gate
+### Verification Gate (MANDATORY before every commit)
 
-Before every commit:
+`run_verification` MUST execute before any commit.
 
-1. Run `run_verification(project_path, files_changed=<changed files>)`
-2. If it fails:
-   - Attempt to fix (max 3 tries per check type)
-   - After 3 failures, do NOT commit - report the issue
-3. If it passes and consensus review is recommended:
-   - Note it in the commit message or progress update
-   - Use team-based verification for high-stakes changes (see below)
+**Error tiers:**
+
+| Tier | Examples | Action | Limit |
+|------|----------|--------|-------|
+| Critical | pytest failures, mypy type errors, bandit security findings | Fix immediately | 3 attempts, then block commit and escalate |
+| Non-critical | ruff style warnings, minor formatting | Log as follow-up task | No block -- commit proceeds, fix in next phase |
+
+**Self-correction principle:** Non-critical issues logged in the current phase may be fixed by subsequent phases. This avoids serialization bottlenecks from blocking on style issues while ensuring critical correctness/security checks remain strict.
+
+**Escalation criteria for blocking issues:**
+- Error requires information not available in context (missing API keys, unclear requirements)
+- Fix attempt changes the semantics of the original task
+- Same error recurs after 3 fix attempts with different strategies
+- Error is in code the current phase did not modify
+
+When blocked: update `progress.md` Blocked field with specific reason, notify via Telegram, and stop.
+
+Use team-based verification for high-stakes changes (see below).
 
 ### Team-Based Verification
 
@@ -131,7 +142,7 @@ This replaces independent subagent-based verification. The team approach lets re
   - Verification fails after retries
   - The user explicitly asks to stop
   - A blocking issue is encountered that requires human judgment
-- Always update `progress.md` before transitioning phases
+- `progress.md` MUST be updated before any phase transition
 
 ### Team Lifecycle
 
@@ -142,14 +153,14 @@ Standard lifecycle for agent teams within the workflow:
 3. **Spawn teammates** with clear prompts referencing the task list
 4. **Monitor** via `TaskList` -- check for completed and blocked tasks
 5. **Coordinate** via `SendMessage` -- prefer DM over broadcast (broadcasts are expensive)
-6. **Shutdown** after all tasks complete: `SendMessage(type: "shutdown_request")` to each teammate, then `TeamDelete`
+6. **Shutdown** -- teams MUST NOT remain running after work completion: `SendMessage(type: "shutdown_request")` to each teammate, then `TeamDelete`
 7. **Record** team outcomes in `progress.md` via `workflow_progress`
 
-**Anti-patterns to avoid:**
-- Don't create teams for trivial work (fewer than 3 parallel tasks)
-- Don't broadcast when a DM suffices
-- Don't leave teams running after work is done
-- Don't use teams when tasks have sequential dependencies (use subagents instead)
+**Constraints (NEVER violate):**
+- NO teams for < 3 parallel tasks
+- NO broadcasts when DM suffices
+- NO teams left running after completion
+- NO teams for sequential dependencies (use subagents instead)
 
 ### Playground Integration
 
@@ -182,3 +193,20 @@ If a session is compressed or restarted:
 2. Read `.claude-project/plan.md` for the overall plan
 3. Check git log for recent commits to understand what's been done
 4. Resume from the current phase/task indicated in progress.md
+
+### Context Freshness
+
+Context degrades as it grows. Prefer rewriting over appending to keep working documents concise and high-signal.
+
+| Document | Mutability | Rule |
+|----------|-----------|------|
+| `progress.md` Current State | Rewritten each phase | MUST reflect only current phase, not accumulate history |
+| `progress.md` Phase History | Append-only | Collapsed `<details>` entries, one per completed phase |
+| `discover.md` | Immutable after Discovery | NO modifications once Discovery phase is complete |
+| `plan.md` | Rewritable during Planning | Immutable once execution begins. Scope changes require new Discovery |
+| `research/*.md` | Immutable after Research | Reference only; do not update during execution |
+
+**Agent context management:**
+- When approaching context limits, summarize and restart rather than continuing with degraded context
+- Re-read `.claude-project/` files from disk rather than relying on in-context memory of their contents
+- Scratchpad notes (comments, TODOs in progress.md "Next Up" section) should be rewritten each phase, not appended
