@@ -75,11 +75,11 @@ def test_full_workflow_lifecycle(tmp_path: Path):
 
 
 def test_mcp_server_starts_with_expected_tools():
-	"""MCP server should start and register exactly 11 tools."""
+	"""MCP server should start and register exactly 12 tools."""
 	from claude_orchestrator.server import mcp
 
 	tools = mcp._tool_manager._tools
-	assert len(tools) == 11, f"Expected 11 tools, got {len(tools)}: {set(tools.keys())}"
+	assert len(tools) == 12, f"Expected 12 tools, got {len(tools)}: {set(tools.keys())}"
 
 	expected = {
 		"health_check",
@@ -88,6 +88,7 @@ def test_mcp_server_starts_with_expected_tools():
 		"log_project_gotcha", "log_global_learning",
 		"run_verification",
 		"init_project_workflow", "workflow_progress", "check_tools",
+		"get_phase_tools",
 	}
 	assert set(tools.keys()) == expected
 
@@ -221,6 +222,70 @@ def test_protocol_constraints_language():
 	assert "Non-critical" in protocol
 	assert "Self-correction principle" in protocol
 	assert "Escalation criteria" in protocol
+
+
+def test_tool_groups_cover_all_registered_tools():
+	"""Every registered MCP tool must appear in at least one tool group."""
+	from claude_orchestrator.server import mcp
+	from claude_orchestrator.tool_groups import ALL_TOOLS
+
+	registered = set(mcp._tool_manager._tools.keys())
+	assert registered == ALL_TOOLS, (
+		f"Mismatch between registered tools and tool groups.\n"
+		f"  In server but not in groups: {registered - ALL_TOOLS}\n"
+		f"  In groups but not in server: {ALL_TOOLS - registered}"
+	)
+
+
+def test_tool_groups_phase_returns_subset():
+	"""get_tools_for_phase returns correct subset for known phases."""
+	from claude_orchestrator.tool_groups import VALID_PHASES, get_tools_for_phase
+
+	for phase in VALID_PHASES:
+		tools = get_tools_for_phase(phase)
+		# Always includes the 'always' tools
+		assert "health_check" in tools
+		assert "get_phase_tools" in tools
+		# Returns a non-empty list
+		assert len(tools) >= 2
+
+	# Discovery includes init but not run_verification
+	discovery_tools = get_tools_for_phase("discovery")
+	assert "init_project_workflow" in discovery_tools
+	assert "run_verification" not in discovery_tools
+
+	# Verification includes run_verification but not init_project_workflow
+	verification_tools = get_tools_for_phase("verification")
+	assert "run_verification" in verification_tools
+	assert "init_project_workflow" not in verification_tools
+
+	# Execution is the largest group
+	execution_tools = get_tools_for_phase("execution")
+	assert "run_verification" in execution_tools
+	assert "workflow_progress" in execution_tools
+	assert "log_project_gotcha" in execution_tools
+
+
+def test_tool_groups_unknown_phase_returns_all():
+	"""Unknown phase returns all tools as fallback."""
+	from claude_orchestrator.tool_groups import ALL_TOOLS, get_tools_for_phase
+
+	tools = get_tools_for_phase("nonexistent")
+	assert set(tools) == ALL_TOOLS
+
+
+def test_protocol_references_tool_groups():
+	"""protocol.md should reference progressive tool disclosure."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "### Tool Disclosure" in protocol
+	assert "get_phase_tools" in protocol
 
 
 def test_gotcha_deduplication(tmp_path: Path):

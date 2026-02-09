@@ -9,6 +9,20 @@ This protocol governs how you approach non-trivial tasks. It activates when `.cl
 3. If the task is trivial (single-file fix, typo, < 3 steps), skip the workflow
 4. If the task is non-trivial, `.claude-project/` MUST be initialized via `init_project_workflow` before proceeding
 
+### Tool Disclosure
+
+At each phase transition, call `get_phase_tools(phase)` to see which tools are relevant. Focus on the returned tools and ignore others to reduce noise.
+
+| Phase | Key Tools | Purpose |
+|-------|-----------|---------|
+| discovery | `init_project_workflow`, `find_project`, `list_my_projects` | Set up workflow, understand project context |
+| research | `check_tools`, `workflow_progress` | Verify toolchain, track progress |
+| planning | `check_tools`, `workflow_progress`, `log_project_decision` | Plan phases, log architectural decisions |
+| execution | `run_verification`, `workflow_progress`, `update_project_status`, `log_*` | Build, verify, commit, record learnings |
+| verification | `run_verification`, `log_project_gotcha` | Pre-commit gate, log issues |
+
+`health_check` and `get_phase_tools` are available in all phases.
+
 ### Team vs Subagent Decision
 
 Before spawning agents for research or review, decide whether to use individual subagents or an agent team:

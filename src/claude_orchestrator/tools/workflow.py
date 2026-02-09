@@ -5,6 +5,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 
 from ..config import Config
+from ..tool_groups import VALID_PHASES, get_tools_for_phase
 from ..workflow import check_tool_availability, init_workflow, update_progress
 
 
@@ -46,6 +47,31 @@ def register_workflow_tools(mcp: FastMCP, config: Config) -> None:
 		"""
 		path = project_path or "."
 		result = update_progress(path, phase_completed, phase_started, commit_hash, summary)
+		return json.dumps(result, indent=2)
+
+	@mcp.tool()
+	async def get_phase_tools(phase: str) -> str:
+		"""
+		Get the list of tools relevant to a workflow phase.
+
+		Call this at each phase transition to know which tools to use.
+		Reduces cognitive overhead by focusing on phase-relevant tools only.
+
+		Args:
+			phase: Workflow phase (discovery, research, planning, execution, verification)
+		"""
+		tools = get_tools_for_phase(phase)
+		result = {
+			"phase": phase,
+			"tools": tools,
+			"count": len(tools),
+		}
+		if phase.lower() not in VALID_PHASES:
+			result["note"] = (
+				f"Unknown phase '{phase}'. "
+				f"Valid phases: {sorted(VALID_PHASES)}. "
+				"Returning all tools."
+			)
 		return json.dumps(result, indent=2)
 
 	@mcp.tool()

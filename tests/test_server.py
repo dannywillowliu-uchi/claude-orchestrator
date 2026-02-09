@@ -13,6 +13,7 @@ EXPECTED_TOOLS = {
 	"init_project_workflow",
 	"workflow_progress",
 	"check_tools",
+	"get_phase_tools",
 }
 
 
