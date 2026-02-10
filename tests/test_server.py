@@ -14,6 +14,7 @@ EXPECTED_TOOLS = {
 	"workflow_progress",
 	"check_tools",
 	"get_phase_tools",
+	"bootstrap_project",
 }
 
 

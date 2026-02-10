@@ -75,11 +75,11 @@ def test_full_workflow_lifecycle(tmp_path: Path):
 
 
 def test_mcp_server_starts_with_expected_tools():
-	"""MCP server should start and register exactly 12 tools."""
+	"""MCP server should start and register exactly 13 tools."""
 	from claude_orchestrator.server import mcp
 
 	tools = mcp._tool_manager._tools
-	assert len(tools) == 12, f"Expected 12 tools, got {len(tools)}: {set(tools.keys())}"
+	assert len(tools) == 13, f"Expected 13 tools, got {len(tools)}: {set(tools.keys())}"
 
 	expected = {
 		"health_check",
@@ -88,7 +88,7 @@ def test_mcp_server_starts_with_expected_tools():
 		"log_project_gotcha", "log_global_learning",
 		"run_verification",
 		"init_project_workflow", "workflow_progress", "check_tools",
-		"get_phase_tools",
+		"get_phase_tools", "bootstrap_project",
 	}
 	assert set(tools.keys()) == expected
 
@@ -286,6 +286,98 @@ def test_protocol_references_tool_groups():
 
 	assert "### Tool Disclosure" in protocol
 	assert "get_phase_tools" in protocol
+
+
+def test_bootstrap_python_project(tmp_path: Path):
+	"""Bootstrap should detect Python project and generate CLAUDE.md."""
+	from claude_orchestrator.bootstrap import detect_project_type, generate_claude_md
+
+	# Create a Python project with uv
+	(tmp_path / "pyproject.toml").write_text(
+		"[project]\nname = 'my-app'\n\n[tool.pytest.ini_options]\n\n[tool.ruff]\n",
+		encoding="utf-8",
+	)
+	(tmp_path / "uv.lock").write_text("", encoding="utf-8")
+	(tmp_path / "src").mkdir()
+
+	profile = detect_project_type(str(tmp_path))
+
+	assert profile.project_type == "python"
+	assert profile.manifest_file == "pyproject.toml"
+	assert profile.package_manager == "uv"
+	assert "uv run pytest" in profile.test_command
+	assert "uv run ruff check" in profile.lint_command
+	assert "uv run mypy" in profile.type_check_command
+	assert profile.detected_tools.get("ruff") is True
+	assert profile.detected_tools.get("pytest") is True
+	assert not profile.has_claude_md
+
+	# Generate CLAUDE.md
+	content = generate_claude_md(profile, "my-app")
+	assert "uv run pytest" in content
+	assert "uv run ruff check" in content
+	assert "python" in content
+	assert "uv" in content
+
+
+def test_bootstrap_node_project(tmp_path: Path):
+	"""Bootstrap should detect Node project and generate CLAUDE.md."""
+	from claude_orchestrator.bootstrap import detect_project_type, generate_claude_md
+
+	# Create a Node project with TypeScript
+	(tmp_path / "package.json").write_text(
+		'{"name": "my-app", "scripts": {"test": "jest"}}',
+		encoding="utf-8",
+	)
+	(tmp_path / "tsconfig.json").write_text("{}", encoding="utf-8")
+	(tmp_path / ".eslintrc.json").write_text("{}", encoding="utf-8")
+
+	profile = detect_project_type(str(tmp_path))
+
+	assert profile.project_type == "node"
+	assert profile.manifest_file == "package.json"
+	assert profile.package_manager == "npm"
+	assert "npm test" in profile.test_command
+	assert "eslint" in profile.lint_command
+	assert "tsc" in profile.type_check_command
+	assert profile.detected_tools.get("typescript") is True
+	assert profile.detected_tools.get("eslint") is True
+	assert not profile.has_claude_md
+
+	content = generate_claude_md(profile, "my-app")
+	assert "npm test" in content
+	assert "node" in content
+
+
+def test_bootstrap_unknown_project(tmp_path: Path):
+	"""Bootstrap should handle unknown project types gracefully."""
+	from claude_orchestrator.bootstrap import detect_project_type
+
+	profile = detect_project_type(str(tmp_path))
+
+	assert profile.project_type == "unknown"
+	assert profile.manifest_file == ""
+	assert profile.verification_commands == []
+
+
+def test_bootstrap_skips_existing_claude_md(tmp_path: Path):
+	"""Bootstrap should not overwrite existing CLAUDE.md."""
+	from claude_orchestrator.bootstrap import detect_project_type
+
+	(tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'\n", encoding="utf-8")
+	(tmp_path / "CLAUDE.md").write_text("# Custom config\n", encoding="utf-8")
+
+	profile = detect_project_type(str(tmp_path))
+	assert profile.has_claude_md is True
+
+
+def test_bootstrap_init_workflow_unchanged(tmp_path: Path):
+	"""init_workflow should still work the same way (backwards compatible)."""
+	result = init_workflow(str(tmp_path))
+	assert result["success"] is True
+	assert "discover.md" in result["created"]
+	assert "plan.md" in result["created"]
+	assert "progress.md" in result["created"]
 
 
 def test_gotcha_deduplication(tmp_path: Path):

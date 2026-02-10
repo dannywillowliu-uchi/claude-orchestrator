@@ -291,6 +291,7 @@ _MCP_TOOL_NAMES = {
 	"update_project_status", "log_project_decision", "log_project_gotcha",
 	"log_global_learning", "run_verification",
 	"init_project_workflow", "workflow_progress", "check_tools",
+	"get_phase_tools", "bootstrap_project",
 }
 
 

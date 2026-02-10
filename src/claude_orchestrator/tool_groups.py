@@ -13,6 +13,7 @@ TOOL_GROUPS: dict[str, list[str]] = {
 	],
 	"discovery": [
 		"init_project_workflow",
+		"bootstrap_project",
 		"find_project",
 		"list_my_projects",
 		"log_project_decision",
