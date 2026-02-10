@@ -24,6 +24,7 @@ from typing import Any, Callable
 
 from claude_orchestrator.bootstrap import detect_project_type, generate_claude_md
 from claude_orchestrator.project_memory import log_decision, log_gotcha
+from claude_orchestrator.review import generate_review, list_reviews
 from claude_orchestrator.tool_groups import (
 	ALL_TOOLS,
 	TOOL_GROUPS,
@@ -413,6 +414,62 @@ def _check_fresh_state(tmp: Path) -> dict[str, Any]:
 	}
 
 
+# ── Review Artifacts ─────────────────────────────────────────────────
+
+
+def _setup_workflow_for_review(tmp: Path) -> None:
+	init_workflow(str(tmp))
+
+
+def _check_review_created(tmp: Path) -> dict[str, Any]:
+	result = generate_review(
+		str(tmp),
+		phase_name="Phase 1 - Core",
+		summary="Built core module.",
+		commit_hash="abc1234",
+		decisions=["Use SQLite"],
+		risks=["No backups"],
+	)
+	artifact = Path(result["artifact_path"])
+	content = artifact.read_text(encoding="utf-8")
+	return {
+		"passed": (
+			result["success"]
+			and artifact.exists()
+			and "Phase 1 - Core" in content
+			and "abc1234" in content
+			and "SQLite" in content
+		),
+	}
+
+
+def _check_review_telegram_summary(tmp: Path) -> dict[str, Any]:
+	result = generate_review(
+		str(tmp),
+		phase_name="Phase 2",
+		summary="Added tests.",
+		risks=["Flaky test"],
+	)
+	summary = result.get("telegram_summary", "")
+	return {
+		"passed": (
+			"Phase complete" in summary
+			and "review recommended" in summary
+		),
+		"summary": summary,
+	}
+
+
+def _check_review_list(tmp: Path) -> dict[str, Any]:
+	generate_review(str(tmp), phase_name="Phase A")
+	generate_review(str(tmp), phase_name="Phase B")
+	reviews = list_reviews(str(tmp))
+	return {
+		"passed": len(reviews) == 2,
+		"count": len(reviews),
+	}
+
+
 # ── Edge Cases ──────────────────────────────────────────────────────
 
 
@@ -564,6 +621,22 @@ SCENARIOS: list[Scenario] = [
 		"cr-03", "Fresh workflow has correct initial state",
 		"context_recovery", "discovery",
 		_setup_fresh_workflow, _check_fresh_state,
+	),
+	# Review artifacts (3)
+	Scenario(
+		"rv-01", "Review artifact created with all sections",
+		"review_artifacts", "execution",
+		_setup_workflow_for_review, _check_review_created,
+	),
+	Scenario(
+		"rv-02", "Telegram summary includes risks warning",
+		"review_artifacts", "execution",
+		_setup_workflow_for_review, _check_review_telegram_summary,
+	),
+	Scenario(
+		"rv-03", "Multiple reviews listed correctly",
+		"review_artifacts", "execution",
+		_setup_workflow_for_review, _check_review_list,
 	),
 	# Edge cases (3)
 	Scenario(

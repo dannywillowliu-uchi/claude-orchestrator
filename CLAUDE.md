@@ -1,6 +1,6 @@
 # claude-orchestrator - Claude Code Project Instructions
 
-Lightweight workflow system for Claude Code with 13 MCP tools. Supports `/playground` skill for visual exploration during discovery, planning, and verification phases.
+Lightweight workflow system for Claude Code with 14 MCP tools. Supports `/playground` skill for visual exploration during discovery, planning, and verification phases.
 
 ## Workflow
 
@@ -19,12 +19,13 @@ Before ANY commit, run the full verification suite automatically:
 
 Block the commit if any check fails. Use the `run_verification` tool to execute the gate.
 
-## Available MCP Tools (13)
+## Available MCP Tools (14)
 
 ### Workflow
 - `init_project_workflow` -- Create .claude-project/ workflow structure
 - `bootstrap_project` -- Detect project type, configure verification, generate starter CLAUDE.md
 - `workflow_progress` -- Update phase progress in progress.md
+- `generate_review_artifact` -- Generate structured review for checkpoint phases
 - `check_tools` -- Verify tool availability before a phase
 - `get_phase_tools` -- Get relevant tools for a workflow phase (progressive disclosure)
 

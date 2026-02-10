@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ..bootstrap import detect_project_type, generate_claude_md
 from ..config import Config
+from ..review import generate_review
 from ..tool_groups import VALID_PHASES, get_tools_for_phase
 from ..workflow import check_tool_availability, init_workflow, update_progress
 
@@ -121,6 +122,54 @@ def register_workflow_tools(mcp: FastMCP, config: Config) -> None:
 			result["claude_md_generated"] = False
 			result["note"] = "CLAUDE.md already exists, skipping generation"
 
+		return json.dumps(result, indent=2)
+
+	@mcp.tool()
+	async def generate_review_artifact(
+		project_path: str = "",
+		phase_name: str = "",
+		summary: str = "",
+		changes: str = "",
+		verification_passed: bool = True,
+		verification_details: str = "",
+		decisions: str = "",
+		risks: str = "",
+		next_steps: str = "",
+		commit_hash: str = "",
+	) -> str:
+		"""
+		Generate a review artifact for a completed checkpoint phase.
+
+		Call this at checkpoint phases to produce a structured review
+		summary stored in .claude-project/reviews/. Returns a Telegram-
+		friendly summary for notification.
+
+		Args:
+			project_path: Path to project (default: current directory)
+			phase_name: Name of the completed phase
+			summary: Brief description of what was accomplished
+			changes: Description of files modified/created
+			verification_passed: Whether verification suite passed
+			verification_details: Detailed verification output
+			decisions: Semicolon-separated list of key decisions
+			risks: Semicolon-separated list of risks or concerns
+			next_steps: What's coming in the next phase
+			commit_hash: Git commit hash for this phase
+		"""
+		path = project_path or "."
+		decisions_list = (
+			[d.strip() for d in decisions.split(";") if d.strip()]
+			if decisions else []
+		)
+		risks_list = (
+			[r.strip() for r in risks.split(";") if r.strip()]
+			if risks else []
+		)
+		result = generate_review(
+			path, phase_name, summary, changes,
+			verification_passed, verification_details,
+			decisions_list, risks_list, next_steps, commit_hash,
+		)
 		return json.dumps(result, indent=2)
 
 	@mcp.tool()

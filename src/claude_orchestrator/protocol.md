@@ -103,7 +103,11 @@ For each phase in the plan:
    b. If verification fails, fix issues (up to 3 attempts), then start a fresh session
    c. If verification passes, commit the changes
    d. Update progress: `workflow_progress(phase_completed="Phase N", phase_started="Phase N+1", commit_hash="...")`
-5. If the phase has `checkpoint: true`, stop and wait for user confirmation
+5. If the phase has `checkpoint: true`:
+   a. Call `generate_review_artifact` with phase summary, verification results, decisions, and risks
+   b. The review artifact is saved to `.claude-project/reviews/`
+   c. Send the `telegram_summary` from the response via Telegram notification
+   d. Stop and wait for user confirmation
 
 ### Verification Gate (MANDATORY before every commit)
 

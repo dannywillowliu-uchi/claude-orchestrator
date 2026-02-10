@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-02-09T21:43:03.427838",
+  "timestamp": "2026-02-09T22:16:13.276839",
   "overall": {
-    "passed": 25,
-    "total": 25,
+    "passed": 28,
+    "total": 28,
     "rate": 1.0
   },
   "dimensions": {
@@ -22,6 +22,11 @@
       "rate": 1.0
     },
     "project_memory": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "review_artifacts": {
       "passed": 3,
       "total": 3,
       "rate": 1.0
@@ -189,6 +194,27 @@
       "id": "cr-03",
       "name": "Fresh workflow has correct initial state",
       "dimension": "context_recovery",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "rv-01",
+      "name": "Review artifact created with all sections",
+      "dimension": "review_artifacts",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "rv-02",
+      "name": "Telegram summary includes risks warning",
+      "dimension": "review_artifacts",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "rv-03",
+      "name": "Multiple reviews listed correctly",
+      "dimension": "review_artifacts",
       "passed": true,
       "error": null
     },

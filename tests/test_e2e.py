@@ -75,11 +75,11 @@ def test_full_workflow_lifecycle(tmp_path: Path):
 
 
 def test_mcp_server_starts_with_expected_tools():
-	"""MCP server should start and register exactly 13 tools."""
+	"""MCP server should start and register exactly 14 tools."""
 	from claude_orchestrator.server import mcp
 
 	tools = mcp._tool_manager._tools
-	assert len(tools) == 13, f"Expected 13 tools, got {len(tools)}: {set(tools.keys())}"
+	assert len(tools) == 14, f"Expected 14 tools, got {len(tools)}: {set(tools.keys())}"
 
 	expected = {
 		"health_check",
@@ -88,7 +88,7 @@ def test_mcp_server_starts_with_expected_tools():
 		"log_project_gotcha", "log_global_learning",
 		"run_verification",
 		"init_project_workflow", "workflow_progress", "check_tools",
-		"get_phase_tools", "bootstrap_project",
+		"get_phase_tools", "bootstrap_project", "generate_review_artifact",
 	}
 	assert set(tools.keys()) == expected
 
@@ -378,6 +378,103 @@ def test_bootstrap_init_workflow_unchanged(tmp_path: Path):
 	assert "discover.md" in result["created"]
 	assert "plan.md" in result["created"]
 	assert "progress.md" in result["created"]
+
+
+def test_review_artifact_generation(tmp_path: Path):
+	"""generate_review should create a review artifact in .claude-project/reviews/."""
+	from claude_orchestrator.review import generate_review
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+
+	result = generate_review(
+		str(tmp_path),
+		phase_name="Phase 1 - Core Implementation",
+		summary="Implemented core module with 5 functions.",
+		changes="Created core.py, updated __init__.py",
+		verification_passed=True,
+		verification_details="pytest: 20 passed, ruff: clean, mypy: clean",
+		decisions=["Use dataclasses over pydantic", "SQLite for storage"],
+		risks=["No migration strategy yet"],
+		next_steps="Phase 2: Add API layer",
+		commit_hash="abc1234",
+	)
+
+	assert result["success"]
+	artifact_path = Path(result["artifact_path"])
+	assert artifact_path.exists()
+	assert "reviews" in str(artifact_path)
+
+	content = artifact_path.read_text(encoding="utf-8")
+	assert "Phase 1 - Core Implementation" in content
+	assert "Implemented core module" in content
+	assert "abc1234" in content
+	assert "dataclasses over pydantic" in content
+	assert "No migration strategy" in content
+	assert "PASSED" in content
+
+	# Telegram summary should be present
+	assert "telegram_summary" in result
+	assert "Phase complete" in result["telegram_summary"]
+
+
+def test_review_artifact_with_failures(tmp_path: Path):
+	"""Review artifact should reflect verification failures."""
+	from claude_orchestrator.review import generate_review
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+
+	result = generate_review(
+		str(tmp_path),
+		phase_name="Phase 2 - Tests",
+		verification_passed=False,
+		verification_details="pytest: 3 failed",
+		risks=["Test failures unresolved", "Blocked on API keys"],
+	)
+
+	assert result["success"]
+	content = Path(result["artifact_path"]).read_text(encoding="utf-8")
+	assert "FAILED" in content
+	assert "Test failures unresolved" in content
+	assert "review recommended" in result["telegram_summary"]
+
+
+def test_review_list(tmp_path: Path):
+	"""list_reviews should return all review artifacts."""
+	from claude_orchestrator.review import generate_review, list_reviews
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+
+	generate_review(str(tmp_path), "Phase 1 - Alpha")
+	generate_review(str(tmp_path), "Phase 2 - Beta")
+
+	reviews = list_reviews(str(tmp_path))
+	assert len(reviews) == 2
+	names = [r["name"] for r in reviews]
+	assert "phase-1-alpha" in names
+	assert "phase-2-beta" in names
+
+
+def test_init_workflow_creates_reviews_dir(tmp_path: Path):
+	"""init_workflow should create the reviews/ subdirectory."""
+	init_workflow(str(tmp_path))
+	assert (tmp_path / ".claude-project" / "reviews").is_dir()
+
+
+def test_protocol_references_review_artifacts():
+	"""protocol.md should reference review artifacts at checkpoints."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "generate_review_artifact" in protocol
+	assert ".claude-project/reviews/" in protocol
 
 
 def test_gotcha_deduplication(tmp_path: Path):

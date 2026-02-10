@@ -35,6 +35,7 @@ TOOL_GROUPS: dict[str, list[str]] = {
 		"log_project_decision",
 		"log_project_gotcha",
 		"log_global_learning",
+		"generate_review_artifact",
 	],
 	"verification": [
 		"run_verification",

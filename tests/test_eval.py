@@ -42,6 +42,7 @@ def test_eval_covers_all_dimensions():
 		"project_memory",
 		"context_recovery",
 		"edge_cases",
+		"review_artifacts",
 	}
 	missing = expected - dimensions
 	assert not missing, f"Missing dimensions: {missing}"

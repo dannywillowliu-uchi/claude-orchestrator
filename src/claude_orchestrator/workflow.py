@@ -89,9 +89,11 @@ def init_workflow(project_path: str) -> dict[str, object]:
 
 	workflow_dir.mkdir(parents=True, exist_ok=True)
 
-	# Create research directory
+	# Create subdirectories
 	research_dir = workflow_dir / "research"
 	research_dir.mkdir(exist_ok=True)
+	reviews_dir = workflow_dir / "reviews"
+	reviews_dir.mkdir(exist_ok=True)
 
 	templates = {
 		"discover.md": DISCOVER_TEMPLATE,
@@ -292,6 +294,7 @@ _MCP_TOOL_NAMES = {
 	"log_global_learning", "run_verification",
 	"init_project_workflow", "workflow_progress", "check_tools",
 	"get_phase_tools", "bootstrap_project",
+	"generate_review_artifact",
 }
 
 
