@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from claude_orchestrator.bootstrap import detect_project_type, generate_claude_md
+from claude_orchestrator.plan_parser import PlanPhase, PlanTree, parse_plan
 from claude_orchestrator.project_memory import log_decision, log_gotcha
 from claude_orchestrator.review import generate_review, list_reviews
 from claude_orchestrator.tool_groups import (
@@ -504,6 +505,87 @@ def _check_rust_detection(tmp: Path) -> dict[str, Any]:
 	}
 
 
+# ── Plan Parsing ────────────────────────────────────────────────────
+
+
+def _setup_flat_plan(tmp: Path) -> None:
+	wdir = tmp / ".claude-project"
+	wdir.mkdir(parents=True)
+	(wdir / "plan.md").write_text(
+		"# Plan\n\n"
+		"## Overview\nSome overview.\n\n"
+		"## Phase 1 - Setup\n"
+		"checkpoint: false\n"
+		"- [ ] Create structure\n\n"
+		"## Phase 2 - Build\n"
+		"checkpoint: true\n"
+		"- [ ] Implement core\n",
+		encoding="utf-8",
+	)
+
+
+def _check_flat_plan_parsed(tmp: Path) -> dict[str, Any]:
+	tree = parse_plan(str(tmp))
+	return {
+		"passed": (
+			len(tree.phases) == 2
+			and tree.phases[0].name == "Phase 1 - Setup"
+			and tree.phases[0].checkpoint is False
+			and tree.phases[1].checkpoint is True
+			and len(tree.phases[0].tasks) == 1
+		),
+		"phase_count": len(tree.phases),
+	}
+
+
+def _setup_nested_plan(tmp: Path) -> None:
+	wdir = tmp / ".claude-project"
+	wdir.mkdir(parents=True)
+	(wdir / "plan.md").write_text(
+		"# Plan\n\n"
+		"## Phase 1 - Core\n"
+		"- [ ] Setup\n\n"
+		"### Sub-phase 1.1 - Models\n"
+		"- [ ] Create models\n\n"
+		"### Sub-phase 1.2 - Services\n"
+		"- [ ] Create services\n\n"
+		"## Phase 2 - API\n"
+		"- [ ] Endpoints\n",
+		encoding="utf-8",
+	)
+
+
+def _check_nested_plan_parsed(tmp: Path) -> dict[str, Any]:
+	tree = parse_plan(str(tmp))
+	flat = tree.flatten()
+	paths = [p for p, _ in flat]
+	return {
+		"passed": (
+			len(tree.phases) == 2
+			and len(tree.phases[0].children) == 2
+			and "Phase 1 - Core > Sub-phase 1.1 - Models" in paths
+			and "Phase 1 - Core > Sub-phase 1.2 - Services" in paths
+		),
+		"paths": paths,
+	}
+
+
+def _check_depth_first_navigation(tmp: Path) -> dict[str, Any]:
+	tree = PlanTree(phases=[
+		PlanPhase(name="Phase 1", depth=0, children=[
+			PlanPhase(name="Sub 1.1", depth=1),
+		]),
+		PlanPhase(name="Phase 2", depth=0),
+	])
+	return {
+		"passed": (
+			tree.next_phase("Phase 1") == "Phase 1 > Sub 1.1"
+			and tree.next_phase("Phase 1 > Sub 1.1") == "Phase 2"
+			and tree.next_phase("Phase 2") is None
+		),
+	}
+
+
 # ── Scenario Registry ──────────────────────────────────────────────
 
 SCENARIOS: list[Scenario] = [
@@ -637,6 +719,22 @@ SCENARIOS: list[Scenario] = [
 		"rv-03", "Multiple reviews listed correctly",
 		"review_artifacts", "execution",
 		_setup_workflow_for_review, _check_review_list,
+	),
+	# Plan parsing (3)
+	Scenario(
+		"pp-01", "Flat plan phases parsed correctly",
+		"plan_parsing", "planning",
+		_setup_flat_plan, _check_flat_plan_parsed,
+	),
+	Scenario(
+		"pp-02", "Nested sub-phases parsed with paths",
+		"plan_parsing", "planning",
+		_setup_nested_plan, _check_nested_plan_parsed,
+	),
+	Scenario(
+		"pp-03", "Depth-first navigation works correctly",
+		"plan_parsing", "planning",
+		_noop_setup, _check_depth_first_navigation,
 	),
 	# Edge cases (3)
 	Scenario(

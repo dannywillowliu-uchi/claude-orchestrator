@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-02-09T22:16:13.276839",
+  "timestamp": "2026-02-09T22:20:57.635228",
   "overall": {
-    "passed": 28,
-    "total": 28,
+    "passed": 31,
+    "total": 31,
     "rate": 1.0
   },
   "dimensions": {
@@ -17,6 +17,11 @@
       "rate": 1.0
     },
     "edge_cases": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "plan_parsing": {
       "passed": 3,
       "total": 3,
       "rate": 1.0
@@ -215,6 +220,27 @@
       "id": "rv-03",
       "name": "Multiple reviews listed correctly",
       "dimension": "review_artifacts",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "pp-01",
+      "name": "Flat plan phases parsed correctly",
+      "dimension": "plan_parsing",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "pp-02",
+      "name": "Nested sub-phases parsed with paths",
+      "dimension": "plan_parsing",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "pp-03",
+      "name": "Depth-first navigation works correctly",
+      "dimension": "plan_parsing",
       "passed": true,
       "error": null
     },

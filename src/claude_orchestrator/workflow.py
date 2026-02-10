@@ -74,6 +74,8 @@ class WorkflowState:
 	has_plan: bool
 	has_progress: bool
 	research_topics: list[str]
+	phase_depth: int = 0
+	parent_phase: str = ""
 
 
 def init_workflow(project_path: str) -> dict[str, object]:

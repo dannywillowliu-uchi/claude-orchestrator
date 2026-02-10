@@ -477,6 +477,139 @@ def test_protocol_references_review_artifacts():
 	assert ".claude-project/reviews/" in protocol
 
 
+def test_plan_parser_flat_phases(tmp_path: Path):
+	"""Plan parser should extract flat phases from plan.md."""
+	from claude_orchestrator.plan_parser import parse_plan
+
+	workflow_dir = tmp_path / ".claude-project"
+	workflow_dir.mkdir(parents=True)
+	(workflow_dir / "plan.md").write_text(
+		"# Plan\n\n"
+		"## Overview\nSome overview.\n\n"
+		"## Phase 1 - Setup\n"
+		"checkpoint: false\n"
+		"- [ ] Create project structure\n"
+		"- [ ] Add configuration\n\n"
+		"## Phase 2 - Implementation\n"
+		"checkpoint: true\n"
+		"- [ ] Build core module\n\n"
+		"## Phase 3 - Tests\n"
+		"checkpoint: false\n"
+		"- [ ] Write unit tests\n",
+		encoding="utf-8",
+	)
+
+	tree = parse_plan(str(tmp_path))
+	assert len(tree.phases) == 3
+	assert tree.phases[0].name == "Phase 1 - Setup"
+	assert tree.phases[0].checkpoint is False
+	assert len(tree.phases[0].tasks) == 2
+	assert tree.phases[1].checkpoint is True
+	assert tree.phases[2].name == "Phase 3 - Tests"
+
+
+def test_plan_parser_nested_phases(tmp_path: Path):
+	"""Plan parser should handle nested sub-phases."""
+	from claude_orchestrator.plan_parser import parse_plan
+
+	workflow_dir = tmp_path / ".claude-project"
+	workflow_dir.mkdir(parents=True)
+	(workflow_dir / "plan.md").write_text(
+		"# Plan\n\n"
+		"## Phase 1 - Core\n"
+		"- [ ] Setup\n\n"
+		"### Sub-phase 1.1 - Models\n"
+		"- [ ] Create models\n\n"
+		"### Sub-phase 1.2 - Services\n"
+		"- [ ] Create services\n\n"
+		"## Phase 2 - API\n"
+		"- [ ] Build endpoints\n",
+		encoding="utf-8",
+	)
+
+	tree = parse_plan(str(tmp_path))
+	assert len(tree.phases) == 2
+	assert len(tree.phases[0].children) == 2
+	assert tree.phases[0].children[0].name == "Sub-phase 1.1 - Models"
+	assert tree.phases[0].children[0].depth == 1
+	assert tree.phases[0].children[1].name == "Sub-phase 1.2 - Services"
+
+
+def test_plan_parser_flatten_depth_first(tmp_path: Path):
+	"""Flattened tree should be in depth-first order with correct paths."""
+	from claude_orchestrator.plan_parser import parse_plan
+
+	workflow_dir = tmp_path / ".claude-project"
+	workflow_dir.mkdir(parents=True)
+	(workflow_dir / "plan.md").write_text(
+		"# Plan\n\n"
+		"## Phase 1 - Core\n"
+		"- [ ] Setup\n\n"
+		"### Sub-phase 1.1 - Models\n"
+		"- [ ] Create models\n\n"
+		"## Phase 2 - API\n"
+		"- [ ] Build endpoints\n",
+		encoding="utf-8",
+	)
+
+	tree = parse_plan(str(tmp_path))
+	flat = tree.flatten()
+	paths = [p for p, _ in flat]
+	assert paths == [
+		"Phase 1 - Core",
+		"Phase 1 - Core > Sub-phase 1.1 - Models",
+		"Phase 2 - API",
+	]
+
+
+def test_plan_parser_next_phase():
+	"""next_phase should return the correct subsequent phase path."""
+	from claude_orchestrator.plan_parser import PlanPhase, PlanTree
+
+	tree = PlanTree(phases=[
+		PlanPhase(name="Phase 1", depth=0, children=[
+			PlanPhase(name="Sub-phase 1.1", depth=1),
+		]),
+		PlanPhase(name="Phase 2", depth=0),
+	])
+
+	assert tree.next_phase("Phase 1") == "Phase 1 > Sub-phase 1.1"
+	assert tree.next_phase("Phase 1 > Sub-phase 1.1") == "Phase 2"
+	assert tree.next_phase("Phase 2") is None
+	assert tree.next_phase("Unknown") == "Phase 1"
+
+
+def test_plan_parser_phase_path_utilities():
+	"""Phase path utilities should parse and navigate correctly."""
+	from claude_orchestrator.plan_parser import (
+		get_parent_phase,
+		get_phase_depth,
+		parse_phase_path,
+	)
+
+	assert parse_phase_path("Phase 1") == ["Phase 1"]
+	assert parse_phase_path("Phase 1 > Sub 1.1") == ["Phase 1", "Sub 1.1"]
+	assert parse_phase_path("A > B > C") == ["A", "B", "C"]
+
+	assert get_phase_depth("Phase 1") == 0
+	assert get_phase_depth("Phase 1 > Sub 1.1") == 1
+	assert get_phase_depth("A > B > C") == 2
+
+	assert get_parent_phase("Phase 1") == ""
+	assert get_parent_phase("Phase 1 > Sub 1.1") == "Phase 1"
+	assert get_parent_phase("A > B > C") == "A > B"
+
+
+def test_plan_parser_empty_plan(tmp_path: Path):
+	"""Parser should handle missing plan.md gracefully."""
+	from claude_orchestrator.plan_parser import parse_plan
+
+	tree = parse_plan(str(tmp_path))
+	assert len(tree.phases) == 0
+	assert tree.flatten() == []
+	assert tree.next_phase("anything") is None
+
+
 def test_gotcha_deduplication(tmp_path: Path):
 	"""log_gotcha should skip duplicates instead of appending them again."""
 	claude_md = tmp_path / "CLAUDE.md"

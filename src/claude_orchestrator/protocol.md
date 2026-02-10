@@ -155,6 +155,9 @@ This replaces independent subagent-based verification. The team approach lets re
 ### Auto-Continue Protocol
 
 - After each phase completion, automatically proceed to the next phase
+- Phase navigation follows **depth-first order**: sub-phases are completed before sibling phases
+  - Example: `Phase 1 > Sub 1.1 > Sub 1.2 > Phase 2`
+  - Use `>` as the path separator in `progress.md` phase strings (e.g., `Phase: Phase 1 > Sub-phase 1.1`)
 - EXCEPT when:
   - The phase has `checkpoint: true` in the plan
   - Verification fails after retries
