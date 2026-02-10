@@ -293,10 +293,10 @@ def _get_last_modified(path: Path) -> str:
 _MCP_TOOL_NAMES = {
 	"health_check", "find_project", "list_my_projects",
 	"update_project_status", "log_project_decision", "log_project_gotcha",
-	"log_global_learning", "run_verification",
+	"log_global_learning", "replan", "run_verification",
 	"init_project_workflow", "workflow_progress", "check_tools",
 	"get_phase_tools", "bootstrap_project",
-	"generate_review_artifact", "suggest_fixes",
+	"generate_review_artifact", "suggest_fixes", "track_convergence",
 }
 
 

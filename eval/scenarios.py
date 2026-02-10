@@ -23,9 +23,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from claude_orchestrator.bootstrap import detect_project_type, generate_claude_md
-from claude_orchestrator.fixer import analyze_verification
+from claude_orchestrator.fixer import analyze_verification, track_convergence
 from claude_orchestrator.plan_parser import PlanPhase, PlanTree, parse_plan
 from claude_orchestrator.project_memory import log_decision, log_gotcha
+from claude_orchestrator.replanner import apply_replan
 from claude_orchestrator.review import generate_review, list_reviews
 from claude_orchestrator.session_report import (
 	format_blocked,
@@ -686,6 +687,232 @@ def _check_blocked_format(tmp: Path) -> dict[str, Any]:
 	}
 
 
+# ── Error Convergence ────────────────────────────────────────────────
+
+
+def _check_convergence_converging(tmp: Path) -> dict[str, Any]:
+	history = [
+		{"critical_count": 3, "non_critical_count": 0, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "b.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "c.py"},
+		]},
+		{"critical_count": 1, "non_critical_count": 0, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "c.py"},
+		]},
+	]
+	result = track_convergence(history)
+	return {
+		"passed": result.trend == "converging" and result.recommendation == "continue_fixing",
+		"trend": result.trend,
+	}
+
+
+def _check_convergence_stable_accept(tmp: Path) -> dict[str, Any]:
+	run = {"critical_count": 0, "non_critical_count": 2, "fix_tasks": [
+		{"check": "ruff", "rule_code": "E501", "file_path": "a.py"},
+		{"check": "ruff", "rule_code": "E502", "file_path": "b.py"},
+	]}
+	result = track_convergence([run, run], tolerance=2)
+	return {
+		"passed": result.trend == "stable" and result.recommendation == "accept_and_commit",
+		"trend": result.trend,
+	}
+
+
+def _check_convergence_diverging_escalate(tmp: Path) -> dict[str, Any]:
+	history = [
+		{"critical_count": 1, "non_critical_count": 0, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+		]},
+		{"critical_count": 2, "non_critical_count": 1, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "b.py"},
+			{"check": "ruff", "rule_code": "E501", "file_path": "c.py"},
+		]},
+	]
+	result = track_convergence(history)
+	return {
+		"passed": result.trend == "diverging" and result.recommendation == "escalate",
+		"trend": result.trend,
+	}
+
+
+# ── Adaptive Replanning ──────────────────────────────────────────────
+
+
+def _setup_workflow_for_replan(tmp: Path) -> None:
+	init_workflow(str(tmp))
+
+
+def _check_replan_applies(tmp: Path) -> dict[str, Any]:
+	result = apply_replan(
+		str(tmp), "scope_change", "Test replan",
+		"# New Plan\n\n## Phase 1 - Updated\n- [ ] New task\n",
+		phases_added=["Phase 1 - Updated"],
+	)
+	plan = (tmp / ".claude-project" / "plan.md").read_text(encoding="utf-8")
+	return {
+		"passed": result.success and "New Plan" in plan,
+		"replan_count": result.replan_count,
+	}
+
+
+def _check_replan_preserves_history(tmp: Path) -> dict[str, Any]:
+	update_progress(str(tmp), phase_completed="Discovery", phase_started="Phase 1")
+	apply_replan(str(tmp), "phase_split", "Split", "# v2\n")
+	content = (tmp / ".claude-project" / "progress.md").read_text(encoding="utf-8")
+	return {
+		"passed": "Discovery" in content and "Replan #1" in content,
+	}
+
+
+def _check_replan_limit(tmp: Path) -> dict[str, Any]:
+	for i in range(3):
+		apply_replan(str(tmp), "scope_change", f"r{i + 1}", f"# v{i + 2}\n")
+	result = apply_replan(str(tmp), "scope_change", "overflow", "# overflow\n")
+	return {
+		"passed": not result.success and "limit" in result.error.lower(),
+	}
+
+
+# ── Integration ──────────────────────────────────────────────────────
+
+
+def _check_convergence_feeds_replan(tmp: Path) -> dict[str, Any]:
+	"""Diverging convergence should trigger replan with verification_feedback."""
+	init_workflow(str(tmp))
+	# Simulate diverging errors
+	history = [
+		{"critical_count": 1, "non_critical_count": 0, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+		]},
+		{"critical_count": 3, "non_critical_count": 0, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "b.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "c.py"},
+		]},
+	]
+	conv = track_convergence(history)
+	# Convergence says escalate -> agent would replan with verification_feedback
+	replan_result = apply_replan(
+		str(tmp), "verification_feedback",
+		f"Errors diverging ({conv.recommendation})",
+		"# Revised Plan\n\n## Phase 1 - Fix regressions\n- [ ] Fix test failures\n",
+	)
+	return {
+		"passed": (
+			conv.recommendation == "escalate"
+			and replan_result.success
+			and replan_result.replan_count == 1
+		),
+		"convergence_trend": conv.trend,
+	}
+
+
+def _setup_workflow_with_plan(tmp: Path) -> None:
+	init_workflow(str(tmp))
+	plan = (
+		"# Plan\n\n"
+		"## Phase 1 - Core\n"
+		"checkpoint: false\n"
+		"- [ ] Build core\n\n"
+		"### Sub-phase 1.1 - Models\n"
+		"- [ ] Create models\n\n"
+		"## Phase 2 - API\n"
+		"checkpoint: true\n"
+		"- [ ] Build endpoints\n"
+	)
+	(tmp / ".claude-project" / "plan.md").write_text(plan, encoding="utf-8")
+
+
+def _check_replan_produces_parseable_plan(tmp: Path) -> dict[str, Any]:
+	"""Replan with phase_split should produce a parseable plan tree."""
+	new_plan = (
+		"# Plan\n\n"
+		"## Phase 1 - Core\n"
+		"checkpoint: false\n"
+		"- [ ] Build core\n\n"
+		"### Sub-phase 1.1 - Models\n"
+		"- [ ] Create models\n\n"
+		"### Sub-phase 1.2 - Validation\n"
+		"- [ ] Add validation\n\n"
+		"## Phase 2 - API\n"
+		"checkpoint: true\n"
+		"- [ ] Build endpoints\n"
+	)
+	result = apply_replan(
+		str(tmp), "phase_split", "Split Phase 1 into sub-phases",
+		new_plan, phases_added=["Sub-phase 1.2 - Validation"],
+	)
+	tree = parse_plan(str(tmp))
+	flat_paths = [p for p, _ in tree.flatten()]
+	return {
+		"passed": (
+			result.success
+			and len(tree.phases) == 2
+			and len(tree.phases[0].children) == 2
+			and "Phase 1 - Core > Sub-phase 1.2 - Validation" in flat_paths
+		),
+		"paths": flat_paths,
+	}
+
+
+def _setup_full_lifecycle(tmp: Path) -> None:
+	init_workflow(str(tmp))
+
+
+def _check_full_lifecycle(tmp: Path) -> dict[str, Any]:
+	"""Full lifecycle: init -> plan -> execute -> replan -> verify -> complete."""
+	# Write initial plan
+	plan = "# Plan\n\n## Phase 1 - Build\n- [ ] Build\n\n## Phase 2 - Test\n- [ ] Test\n"
+	(tmp / ".claude-project" / "plan.md").write_text(plan, encoding="utf-8")
+
+	# Execute phase 1
+	update_progress(str(tmp), phase_completed="Discovery", phase_started="Phase 1 - Build")
+	state = get_workflow_state(str(tmp))
+	assert state.current_phase == "Phase 1 - Build"
+
+	# Replan: add Phase 1.5
+	new_plan = (
+		"# Plan\n\n## Phase 1 - Build\n- [ ] Build\n\n"
+		"## Phase 1.5 - Refactor\n- [ ] Refactor\n\n"
+		"## Phase 2 - Test\n- [ ] Test\n"
+	)
+	replan = apply_replan(
+		str(tmp), "scope_change", "Need refactoring phase",
+		new_plan, phases_added=["Phase 1.5 - Refactor"],
+	)
+
+	# Complete remaining phases
+	update_progress(
+		str(tmp), phase_completed="Phase 1 - Build",
+		phase_started="Phase 1.5 - Refactor", commit_hash="aaa1111",
+	)
+	update_progress(
+		str(tmp), phase_completed="Phase 1.5 - Refactor",
+		phase_started="Phase 2 - Test", commit_hash="bbb2222",
+	)
+	update_progress(
+		str(tmp), phase_completed="Phase 2 - Test",
+		phase_started="Complete", commit_hash="ccc3333",
+	)
+
+	final_state = get_workflow_state(str(tmp))
+	content = (tmp / ".claude-project" / "progress.md").read_text(encoding="utf-8")
+
+	return {
+		"passed": (
+			replan.success
+			and final_state.current_phase == "Complete"
+			and final_state.last_commit == "ccc3333"
+			and "Replan #1" in content
+			and "Phase 1 - Build" in content
+			and "Phase 1.5 - Refactor" in content
+		),
+	}
+
+
 # ── Scenario Registry ──────────────────────────────────────────────
 
 SCENARIOS: list[Scenario] = [
@@ -868,6 +1095,54 @@ SCENARIOS: list[Scenario] = [
 		"session_reporting", "execution",
 		_noop_setup, _check_blocked_format,
 	),
+	# Error convergence (3)
+	Scenario(
+		"ec-converge-01", "Converging errors recommend continue_fixing",
+		"error_convergence", "verification",
+		_noop_setup, _check_convergence_converging,
+	),
+	Scenario(
+		"ec-converge-02", "Stable non-critical accepts and commits",
+		"error_convergence", "verification",
+		_noop_setup, _check_convergence_stable_accept,
+	),
+	Scenario(
+		"ec-converge-03", "Diverging errors recommend escalate",
+		"error_convergence", "verification",
+		_noop_setup, _check_convergence_diverging_escalate,
+	),
+	# Adaptive replanning (3)
+	Scenario(
+		"ar-01", "Replan applies new plan content",
+		"adaptive_replanning", "execution",
+		_setup_workflow_for_replan, _check_replan_applies,
+	),
+	Scenario(
+		"ar-02", "Replan preserves phase history",
+		"adaptive_replanning", "execution",
+		_setup_workflow_for_replan, _check_replan_preserves_history,
+	),
+	Scenario(
+		"ar-03", "Replan limit enforced",
+		"adaptive_replanning", "execution",
+		_setup_workflow_for_replan, _check_replan_limit,
+	),
+	# Integration (3)
+	Scenario(
+		"int-01", "Diverging convergence feeds replan via verification_feedback",
+		"integration", "execution",
+		_noop_setup, _check_convergence_feeds_replan,
+	),
+	Scenario(
+		"int-02", "Replan with phase_split produces parseable sub-phases",
+		"integration", "execution",
+		_setup_workflow_with_plan, _check_replan_produces_parseable_plan,
+	),
+	Scenario(
+		"int-03", "Full lifecycle: init -> plan -> execute -> replan -> complete",
+		"integration", "execution",
+		_setup_full_lifecycle, _check_full_lifecycle,
+	),
 	# Edge cases (3)
 	Scenario(
 		"ec-01", "Init on deeply nested path",
@@ -886,4 +1161,4 @@ SCENARIOS: list[Scenario] = [
 	),
 ]
 
-assert len(SCENARIOS) >= 20, f"Expected >= 20 scenarios, got {len(SCENARIOS)}"
+assert len(SCENARIOS) >= 37, f"Expected >= 37 scenarios, got {len(SCENARIOS)}"

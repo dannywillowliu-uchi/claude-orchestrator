@@ -1,11 +1,16 @@
 {
-  "timestamp": "2026-02-09T22:29:20.369945",
+  "timestamp": "2026-02-10T10:46:03.285789",
   "overall": {
-    "passed": 37,
-    "total": 37,
+    "passed": 46,
+    "total": 46,
     "rate": 1.0
   },
   "dimensions": {
+    "adaptive_replanning": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
     "bootstrap": {
       "passed": 6,
       "total": 6,
@@ -17,6 +22,16 @@
       "rate": 1.0
     },
     "edge_cases": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "error_convergence": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "integration": {
       "passed": 3,
       "total": 3,
       "rate": 1.0
@@ -293,6 +308,69 @@
       "id": "sr-03",
       "name": "Blocked message includes reason and intervention prompt",
       "dimension": "session_reporting",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ec-converge-01",
+      "name": "Converging errors recommend continue_fixing",
+      "dimension": "error_convergence",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ec-converge-02",
+      "name": "Stable non-critical accepts and commits",
+      "dimension": "error_convergence",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ec-converge-03",
+      "name": "Diverging errors recommend escalate",
+      "dimension": "error_convergence",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ar-01",
+      "name": "Replan applies new plan content",
+      "dimension": "adaptive_replanning",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ar-02",
+      "name": "Replan preserves phase history",
+      "dimension": "adaptive_replanning",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ar-03",
+      "name": "Replan limit enforced",
+      "dimension": "adaptive_replanning",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "int-01",
+      "name": "Diverging convergence feeds replan via verification_feedback",
+      "dimension": "integration",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "int-02",
+      "name": "Replan with phase_split produces parseable sub-phases",
+      "dimension": "integration",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "int-03",
+      "name": "Full lifecycle: init -> plan -> execute -> replan -> complete",
+      "dimension": "integration",
       "passed": true,
       "error": null
     },

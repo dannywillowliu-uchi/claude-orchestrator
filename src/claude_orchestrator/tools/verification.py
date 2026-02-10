@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from .. import project_memory
 from ..config import Config
 from ..fixer import analyze_verification
+from ..fixer import track_convergence as _track_convergence
 from ..orchestrator.verifier import CheckResult, CheckStatus, Verifier
 
 logger = logging.getLogger(__name__)
@@ -210,5 +211,41 @@ def register_verification_tools(mcp: FastMCP, config: Config) -> None:
 				}
 				for t in result.fix_tasks
 			],
+		}
+		return json.dumps(response, indent=2)
+
+	@mcp.tool()
+	async def track_convergence(
+		verification_history_json: str,
+		tolerance: int = 2,
+	) -> str:
+		"""
+		Analyze error trends across multiple verification runs.
+
+		Call this after 2+ fix attempts to determine whether errors are
+		converging (decreasing), stable, or diverging (increasing). Returns
+		a recommendation: continue_fixing, accept_and_commit, or escalate.
+
+		Args:
+			verification_history_json: JSON array of previous suggest_fixes outputs (chronological)
+			tolerance: Number of stable runs before accepting non-critical-only state (default 2)
+		"""
+		try:
+			history = json.loads(verification_history_json)
+		except json.JSONDecodeError:
+			return json.dumps({"error": "Invalid JSON input"})
+
+		if not isinstance(history, list):
+			return json.dumps({"error": "Expected a JSON array of verification results"})
+
+		result = _track_convergence(history, tolerance)
+
+		response = {
+			"trend": result.trend,
+			"runs_analyzed": result.runs_analyzed,
+			"recommendation": result.recommendation,
+			"errors_fixed": result.errors_fixed,
+			"errors_new": result.errors_new,
+			"errors_persistent": result.errors_persistent,
 		}
 		return json.dumps(response, indent=2)

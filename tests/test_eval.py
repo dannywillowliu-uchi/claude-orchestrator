@@ -46,6 +46,9 @@ def test_eval_covers_all_dimensions():
 		"plan_parsing",
 		"self_correction",
 		"session_reporting",
+		"error_convergence",
+		"adaptive_replanning",
+		"integration",
 	}
 	missing = expected - dimensions
 	assert not missing, f"Missing dimensions: {missing}"

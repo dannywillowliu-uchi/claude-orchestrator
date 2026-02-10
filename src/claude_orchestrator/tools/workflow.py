@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ..bootstrap import detect_project_type, generate_claude_md
 from ..config import Config
+from ..replanner import apply_replan, evaluate_replan_trigger
 from ..review import generate_review
 from ..tool_groups import VALID_PHASES, get_tools_for_phase
 from ..workflow import check_tool_availability, init_workflow, update_progress
@@ -183,3 +184,61 @@ def register_workflow_tools(mcp: FastMCP, config: Config) -> None:
 		tools = [t.strip() for t in tools_required.split(",") if t.strip()]
 		result = check_tool_availability(tools)
 		return json.dumps(result, indent=2)
+
+	@mcp.tool()
+	async def replan(
+		project_path: str = "",
+		trigger: str = "",
+		reason: str = "",
+		new_plan_content: str = "",
+		phases_added: str = "",
+		phases_removed: str = "",
+		phases_modified: str = "",
+	) -> str:
+		"""
+		Modify plan.md during execution when circumstances change.
+
+		Call this when the current plan needs adaptation: blocked dependencies,
+		diverging errors, scope changes, or phase splits/skips. Max 3 replans
+		per session. Every replan is logged to progress.md Phase History.
+
+		If new_plan_content is empty, returns current plan context for evaluation.
+		If new_plan_content is provided, applies the replan.
+
+		Args:
+			project_path: Path to project (default: current directory)
+			trigger: Replan trigger (scope_change, blocked_dependency, verification_feedback, phase_split, phase_skip)
+			reason: Human-readable reason for the replan
+			new_plan_content: Full replacement content for plan.md (empty = evaluate only)
+			phases_added: Semicolon-separated names of phases added
+			phases_removed: Semicolon-separated names of phases removed
+			phases_modified: Semicolon-separated names of phases modified
+		"""
+		path = project_path or "."
+
+		if not new_plan_content:
+			eval_result = evaluate_replan_trigger(path, trigger, reason)
+			return json.dumps(eval_result, indent=2)
+
+		added = [p.strip() for p in phases_added.split(";") if p.strip()] if phases_added else []
+		removed = [p.strip() for p in phases_removed.split(";") if p.strip()] if phases_removed else []
+		modified = [p.strip() for p in phases_modified.split(";") if p.strip()] if phases_modified else []
+
+		replan_result = apply_replan(
+			path, trigger, reason, new_plan_content,
+			added, removed, modified,
+		)
+
+		response: dict[str, object] = {
+			"success": replan_result.success,
+			"replan_count": replan_result.replan_count,
+		}
+		if replan_result.error:
+			response["error"] = replan_result.error
+		if replan_result.event:
+			response["trigger"] = replan_result.event.trigger
+			response["reason"] = replan_result.event.reason
+			response["phases_added"] = replan_result.event.phases_added
+			response["phases_removed"] = replan_result.event.phases_removed
+			response["phases_modified"] = replan_result.event.phases_modified
+		return json.dumps(response, indent=2)

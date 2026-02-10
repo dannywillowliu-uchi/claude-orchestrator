@@ -7,6 +7,12 @@ a circuit breaker to escalate when too many issues accumulate.
 Error tiers (from protocol):
 - Critical: pytest failures, mypy type errors, bandit security findings
 - Non-critical: ruff style warnings, minor formatting
+
+Convergence tracking:
+- Tracks error trends across multiple verification runs
+- Converging (count decreasing) -> continue fixing
+- Stable with only non-critical -> accept and commit
+- Diverging (count increasing) or stable with critical -> escalate
 """
 
 import re
@@ -215,3 +221,151 @@ def _extract_non_critical_tasks(check_name: str, output: str) -> list[FixTask]:
 			))
 
 	return tasks
+
+
+# ── Convergence Tracking ──────────────────────────────────────────
+
+
+@dataclass
+class ConvergenceSnapshot:
+	"""A single verification run's error state."""
+
+	critical_count: int
+	non_critical_count: int
+	error_signatures: set[str] = field(default_factory=set)
+
+
+@dataclass
+class ConvergenceResult:
+	"""Trend analysis across multiple verification runs."""
+
+	trend: str  # "converging", "stable", "diverging", "insufficient_data"
+	runs_analyzed: int
+	errors_fixed: list[str] = field(default_factory=list)
+	errors_new: list[str] = field(default_factory=list)
+	errors_persistent: list[str] = field(default_factory=list)
+	recommendation: str = ""  # "continue_fixing", "accept_and_commit", "escalate"
+
+
+def _error_signature(task: dict[str, object]) -> str:
+	"""Generate unique error ID from a fix task dict: check::rule_code::file_path."""
+	check = str(task.get("check", task.get("check_name", "")))
+	rule = str(task.get("rule_code", ""))
+	filepath = str(task.get("file_path", ""))
+	return f"{check}::{rule}::{filepath}"
+
+
+def _snapshot_from_suggest_fixes(run: dict[str, object]) -> ConvergenceSnapshot:
+	"""Build a ConvergenceSnapshot from a suggest_fixes output dict."""
+	critical_raw = run.get("critical_count", 0)
+	non_critical_raw = run.get("non_critical_count", 0)
+	critical = int(str(critical_raw))
+	non_critical = int(str(non_critical_raw))
+	tasks = run.get("fix_tasks", [])
+	sigs: set[str] = set()
+	if isinstance(tasks, list):
+		for t in tasks:
+			if isinstance(t, dict):
+				sigs.add(_error_signature(t))
+	return ConvergenceSnapshot(
+		critical_count=critical,
+		non_critical_count=non_critical,
+		error_signatures=sigs,
+	)
+
+
+def track_convergence(
+	history: list[dict[str, object]],
+	tolerance: int = 2,
+) -> ConvergenceResult:
+	"""Analyze error trends across verification runs.
+
+	Args:
+		history: List of suggest_fixes output dicts (chronological order).
+		tolerance: Number of stable runs before accepting non-critical-only state.
+
+	Returns:
+		ConvergenceResult with trend, recommendation, and error diffs.
+	"""
+	if len(history) < 2:
+		return ConvergenceResult(
+			trend="insufficient_data",
+			runs_analyzed=len(history),
+			recommendation="continue_fixing",
+		)
+
+	snapshots = [_snapshot_from_suggest_fixes(run) for run in history]
+	runs_analyzed = len(snapshots)
+
+	# Compare first and last for fixed/new/persistent
+	first_sigs = snapshots[0].error_signatures
+	last_sigs = snapshots[-1].error_signatures
+	errors_fixed = sorted(first_sigs - last_sigs)
+	errors_new = sorted(last_sigs - first_sigs)
+	errors_persistent = sorted(first_sigs & last_sigs)
+
+	# Determine trend from total error counts
+	counts = [s.critical_count + s.non_critical_count for s in snapshots]
+
+	# Check if diverging: last count > first count
+	if counts[-1] > counts[0]:
+		return ConvergenceResult(
+			trend="diverging",
+			runs_analyzed=runs_analyzed,
+			errors_fixed=errors_fixed,
+			errors_new=errors_new,
+			errors_persistent=errors_persistent,
+			recommendation="escalate",
+		)
+
+	# Check if converging: last count < first count
+	if counts[-1] < counts[0]:
+		return ConvergenceResult(
+			trend="converging",
+			runs_analyzed=runs_analyzed,
+			errors_fixed=errors_fixed,
+			errors_new=errors_new,
+			errors_persistent=errors_persistent,
+			recommendation="continue_fixing",
+		)
+
+	# Stable: same count across runs -- check if stable long enough
+	# and whether any critical errors remain
+	last = snapshots[-1]
+	stable_runs = 0
+	for i in range(len(counts) - 1, -1, -1):
+		if counts[i] == counts[-1]:
+			stable_runs += 1
+		else:
+			break
+
+	has_critical = last.critical_count > 0
+
+	if has_critical:
+		return ConvergenceResult(
+			trend="stable",
+			runs_analyzed=runs_analyzed,
+			errors_fixed=errors_fixed,
+			errors_new=errors_new,
+			errors_persistent=errors_persistent,
+			recommendation="escalate",
+		)
+
+	if stable_runs >= tolerance and last.non_critical_count > 0:
+		return ConvergenceResult(
+			trend="stable",
+			runs_analyzed=runs_analyzed,
+			errors_fixed=errors_fixed,
+			errors_new=errors_new,
+			errors_persistent=errors_persistent,
+			recommendation="accept_and_commit",
+		)
+
+	return ConvergenceResult(
+		trend="stable",
+		runs_analyzed=runs_analyzed,
+		errors_fixed=errors_fixed,
+		errors_new=errors_new,
+		errors_persistent=errors_persistent,
+		recommendation="continue_fixing",
+	)

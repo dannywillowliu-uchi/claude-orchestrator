@@ -39,6 +39,22 @@ Before spawning agents for research or review, decide whether to use individual 
 
 > **Note**: Agent teams are experimental. The protocol gracefully falls back to subagents if teams are unavailable or disabled.
 
+### Parallel Decomposition
+
+When splitting work across subagents or team members, avoid two failure modes:
+
+- **Serial collapse**: Running tasks sequentially when they have no dependencies. Symptoms: one agent blocks while another's output sits unused; total time equals sum of all tasks instead of the longest.
+- **Spurious parallelism**: Running tasks in parallel when they share mutable state or have ordering constraints. Symptoms: merge conflicts, race conditions, agents overwriting each other's work.
+
+**Critical path rule**: Total latency = orchestration overhead + duration of the slowest parallel branch. Parallelism only helps when branches are roughly equal in effort and truly independent.
+
+**Guidelines:**
+- NEVER parallelize fewer than 3 independent tasks (overhead outweighs benefit)
+- Identify the dependency graph BEFORE spawning agents -- draw it out in the plan if complex
+- Each parallel branch MUST have a clear output artifact (file, result, report) that the orchestrator collects
+- If two branches need to read/write the same file, they are NOT independent -- serialize them
+- After parallel branches complete, always synthesize results before proceeding
+
 ### Discovery Phase
 
 When starting a new feature or significant change:
@@ -98,12 +114,13 @@ For each phase in the plan:
 1. Read `progress.md` to confirm current phase and any blocked state
 2. Run `check_tools` for any phase-specific tool requirements
 3. Implement tasks sequentially within the phase
-4. After all tasks in a phase are complete:
+4. **Oracle-based task partitioning**: For large implementation phases, write failing tests FIRST that define the expected behavior (the "oracle"). Then partition work into the smallest chunks where each chunk flips one or more tests from red to green. Verify incrementally after each chunk. This provides continuous progress signal and catches regressions early.
+5. After all tasks in a phase are complete:
    a. `run_verification` MUST execute before any commit
    b. If verification fails, fix issues (up to 3 attempts), then start a fresh session
    c. If verification passes, commit the changes
    d. Update progress: `workflow_progress(phase_completed="Phase N", phase_started="Phase N+1", commit_hash="...")`
-5. If the phase has `checkpoint: true`:
+6. If the phase has `checkpoint: true`:
    a. Call `generate_review_artifact` with phase summary, verification results, decisions, and risks
    b. The review artifact is saved to `.claude-project/reviews/`
    c. Send the `telegram_summary` from the response via Telegram notification
@@ -128,6 +145,7 @@ For each phase in the plan:
    - **Critical fix tasks** (`should_block: true`): fix immediately, re-verify, up to 3 attempts
    - **Non-critical fix tasks** (`should_block: false`): log as follow-up, commit proceeds
 4. **Circuit breaker**: if `circuit_breaker_triggered: true` (>5 non-critical issues), escalate -- do NOT attempt mass fixes
+5. **Convergence tracking**: After 2+ fix attempts, call `track_convergence` with the array of previous `suggest_fixes` outputs. Follow its recommendation: `continue_fixing` (errors decreasing), `accept_and_commit` (stable non-critical only), `escalate` (errors increasing or stable-but-critical)
 
 **Escalation criteria for blocking issues:**
 - Error requires information not available in context (missing API keys, unclear requirements)
@@ -159,6 +177,29 @@ For high-stakes changes (security-sensitive code, architecture shifts, multi-fil
 6. Shutdown team after review is complete
 
 This replaces independent subagent-based verification. The team approach lets reviewers challenge each other's findings and reduces false positives.
+
+### Adaptive Replanning
+
+Plans are mutable during execution via the `replan` tool. When execution diverges from the plan, adapt rather than force-fit.
+
+**When to replan:**
+- Blocked by an unanticipated dependency or external issue (`blocked_dependency`)
+- Diverging errors from `track_convergence` suggest the approach is wrong (`verification_feedback`)
+- A phase turns out to be too large and needs splitting (`phase_split`)
+- A phase is unnecessary given what was learned during execution (`phase_skip`)
+- New requirements or scope changes from the user (`scope_change`)
+
+**How to replan:**
+1. Call `replan` with trigger type, reason, and empty `new_plan_content` to get current context
+2. Write new plan content incorporating completed phases and adjusting remaining phases
+3. Call `replan` again with the new plan content to apply
+4. Log the decision via `log_project_decision`
+
+**Constraints (NEVER violate):**
+- Max 3 replans per session -- if you need more, the task needs re-scoping
+- MUST NOT remove completed phases from the plan (they are historical record)
+- MUST NOT skip verification gates when replanning
+- Every replan MUST be logged to progress.md Phase History (automatic)
 
 ### Auto-Continue Protocol
 
@@ -220,6 +261,17 @@ Send structured Telegram notifications at key session events using the `telegram
 
 Report only at transitions -- do not send notifications during implementation.
 
+### Continuous Improvement Loop
+
+When the plan is fully executed and all phases are complete, don't stop. The cycle continues:
+
+1. **Audit**: Run verification suite, scan for TODOs, check dependency health
+2. **Discover**: Identify 1-3 improvement opportunities (regressions > bugs > quality > features > deps)
+3. **Propose**: Present opportunities to the user or write as new plan phases with `checkpoint: true`
+4. **Repeat**: Plan -> Execute -> Verify -> Discover -> Plan
+
+Discovery phases are always advisory (`checkpoint: true`). The agent proposes, the human approves.
+
 ### Model Tier Guidance
 
 - **Research subagents**: Use Sonnet (`model: "sonnet"`) for cost efficiency
@@ -246,10 +298,26 @@ Context degrades as it grows. Prefer rewriting over appending to keep working do
 | `progress.md` Current State | Rewritten each phase | MUST reflect only current phase, not accumulate history |
 | `progress.md` Phase History | Append-only | Collapsed `<details>` entries, one per completed phase |
 | `discover.md` | Immutable after Discovery | NO modifications once Discovery phase is complete |
-| `plan.md` | Rewritable during Planning | Immutable once execution begins. Scope changes require new Discovery |
+| `plan.md` | Rewritable during Planning | Mutable via `replan` tool only (max 3 per session). Direct edits during execution are forbidden. |
 | `research/*.md` | Immutable after Research | Reference only; do not update during execution |
 
 **Agent context management:**
 - When approaching context limits, summarize and restart rather than continuing with degraded context
 - Re-read `.claude-project/` files from disk rather than relying on in-context memory of their contents
 - Scratchpad notes (comments, TODOs in progress.md "Next Up" section) should be rewritten each phase, not appended
+
+### Output Discipline
+
+Context pollution is the leading cause of agent degradation in long sessions. Every token of noise crowds out signal.
+
+**Rules:**
+- Pipe verbose command output to files; return only summaries (e.g., "12 passed, 0 failed" not the full pytest log)
+- Read specific line ranges, not entire files, when looking for a single function or section
+- Lead with decisions and conclusions, not with the reasoning chain that produced them
+- Summarize research findings in 3-5 bullet points before elaborating
+
+**NEVER do:**
+- Dump full test output or raw stack traces into conversation context
+- Read a 500-line file to find a 10-line function (use Grep or line ranges)
+- Repeat prior context verbatim when a reference suffices
+- Include build/install logs unless they contain an error

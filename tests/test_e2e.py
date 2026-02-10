@@ -79,17 +79,17 @@ def test_mcp_server_starts_with_expected_tools():
 	from claude_orchestrator.server import mcp
 
 	tools = mcp._tool_manager._tools
-	assert len(tools) == 15, f"Expected 15 tools, got {len(tools)}: {set(tools.keys())}"
+	assert len(tools) == 17, f"Expected 17 tools, got {len(tools)}: {set(tools.keys())}"
 
 	expected = {
 		"health_check",
 		"find_project", "list_my_projects",
 		"update_project_status", "log_project_decision",
 		"log_project_gotcha", "log_global_learning",
-		"run_verification",
+		"replan", "run_verification",
 		"init_project_workflow", "workflow_progress", "check_tools",
 		"get_phase_tools", "bootstrap_project", "generate_review_artifact",
-		"suggest_fixes",
+		"suggest_fixes", "track_convergence",
 	}
 	assert set(tools.keys()) == expected
 
@@ -215,7 +215,7 @@ def test_protocol_constraints_language():
 	assert "### Context Freshness" in protocol
 	assert "MUST reflect only current phase" in protocol
 	assert "NO modifications once Discovery phase is complete" in protocol
-	assert "Immutable once execution begins" in protocol
+	assert "Mutable via `replan` tool only" in protocol
 
 	# 1.3: Tiered error handling
 	assert "Verification Gate (MANDATORY before every commit)" in protocol
@@ -772,6 +772,297 @@ def test_protocol_references_session_reporting():
 	assert "Checkpoint" in protocol
 	assert "Blocked" in protocol
 	assert "Session complete" in protocol
+
+
+def test_replan_applies_new_plan(tmp_path: Path):
+	"""Replan should replace plan.md content."""
+	from claude_orchestrator.replanner import apply_replan
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+	new_content = "# Revised Plan\n\n## Phase 1 - New\n- [ ] New task\n"
+	result = apply_replan(
+		str(tmp_path), "scope_change", "Requirements changed",
+		new_content, phases_added=["Phase 1 - New"],
+	)
+	assert result.success is True
+	assert result.replan_count == 1
+	plan = (tmp_path / ".claude-project" / "plan.md").read_text(encoding="utf-8")
+	assert "Revised Plan" in plan
+
+
+def test_replan_preserves_progress_history(tmp_path: Path):
+	"""Replan should not destroy existing phase history entries."""
+	from claude_orchestrator.replanner import apply_replan
+	from claude_orchestrator.workflow import init_workflow, update_progress
+
+	init_workflow(str(tmp_path))
+	update_progress(str(tmp_path), phase_completed="Discovery", phase_started="Phase 1")
+
+	content = (tmp_path / ".claude-project" / "progress.md").read_text(encoding="utf-8")
+	assert "Discovery" in content
+
+	apply_replan(str(tmp_path), "phase_split", "Splitting phase", "# New Plan\n")
+
+	content = (tmp_path / ".claude-project" / "progress.md").read_text(encoding="utf-8")
+	assert "Discovery" in content  # History preserved
+
+
+def test_replan_logs_event(tmp_path: Path):
+	"""Replan event should appear in progress.md Phase History."""
+	from claude_orchestrator.replanner import apply_replan
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+	apply_replan(str(tmp_path), "blocked_dependency", "API unavailable", "# Plan v2\n")
+
+	content = (tmp_path / ".claude-project" / "progress.md").read_text(encoding="utf-8")
+	assert "Replan #1" in content
+	assert "blocked_dependency" in content
+	assert "API unavailable" in content
+
+
+def test_replan_invalid_trigger(tmp_path: Path):
+	"""Unknown trigger should be rejected."""
+	from claude_orchestrator.replanner import apply_replan
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+	result = apply_replan(str(tmp_path), "invalid_trigger", "reason", "# Plan\n")
+	assert result.success is False
+	assert "Invalid trigger" in result.error
+
+
+def test_replan_count_tracked(tmp_path: Path):
+	"""Replan count should increment and be parseable from progress.md."""
+	from claude_orchestrator.replanner import _parse_replan_count, apply_replan
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+	apply_replan(str(tmp_path), "scope_change", "r1", "# v2\n")
+	apply_replan(str(tmp_path), "scope_change", "r2", "# v3\n")
+
+	content = (tmp_path / ".claude-project" / "progress.md").read_text(encoding="utf-8")
+	assert _parse_replan_count(content) == 2
+
+
+def test_replan_count_limit(tmp_path: Path):
+	"""Should reject after MAX_REPLANS replans."""
+	from claude_orchestrator.replanner import MAX_REPLANS, apply_replan
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+	for i in range(MAX_REPLANS):
+		result = apply_replan(str(tmp_path), "scope_change", f"replan {i + 1}", f"# v{i + 2}\n")
+		assert result.success is True
+
+	result = apply_replan(str(tmp_path), "scope_change", "one too many", "# overflow\n")
+	assert result.success is False
+	assert "limit" in result.error.lower()
+
+
+def test_protocol_includes_adaptive_replanning():
+	"""protocol.md should include adaptive replanning section."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "### Adaptive Replanning" in protocol
+	assert "replan" in protocol
+	assert "max 3 replans" in protocol.lower() or "Max 3 replans" in protocol
+
+
+def test_convergence_converging():
+	"""Decreasing errors should recommend continue_fixing."""
+	from claude_orchestrator.fixer import track_convergence
+
+	history = [
+		{"critical_count": 3, "non_critical_count": 2, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "b.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "c.py"},
+			{"check": "ruff", "rule_code": "E501", "file_path": "a.py"},
+			{"check": "ruff", "rule_code": "E502", "file_path": "a.py"},
+		]},
+		{"critical_count": 1, "non_critical_count": 1, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "c.py"},
+			{"check": "ruff", "rule_code": "E501", "file_path": "a.py"},
+		]},
+	]
+	result = track_convergence(history)
+	assert result.trend == "converging"
+	assert result.recommendation == "continue_fixing"
+	assert len(result.errors_fixed) > 0
+
+
+def test_convergence_stable_non_critical():
+	"""Stable non-critical-only errors for tolerance runs should recommend accept_and_commit."""
+	from claude_orchestrator.fixer import track_convergence
+
+	run = {"critical_count": 0, "non_critical_count": 2, "fix_tasks": [
+		{"check": "ruff", "rule_code": "E501", "file_path": "a.py"},
+		{"check": "ruff", "rule_code": "E502", "file_path": "b.py"},
+	]}
+	history = [run, run]
+	result = track_convergence(history, tolerance=2)
+	assert result.trend == "stable"
+	assert result.recommendation == "accept_and_commit"
+
+
+def test_convergence_diverging():
+	"""Increasing errors should recommend escalate."""
+	from claude_orchestrator.fixer import track_convergence
+
+	history = [
+		{"critical_count": 1, "non_critical_count": 0, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+		]},
+		{"critical_count": 3, "non_critical_count": 1, "fix_tasks": [
+			{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "b.py"},
+			{"check": "pytest", "rule_code": "", "file_path": "c.py"},
+			{"check": "ruff", "rule_code": "E501", "file_path": "d.py"},
+		]},
+	]
+	result = track_convergence(history)
+	assert result.trend == "diverging"
+	assert result.recommendation == "escalate"
+
+
+def test_convergence_stable_critical_escalates():
+	"""Stable errors with critical issues should escalate."""
+	from claude_orchestrator.fixer import track_convergence
+
+	run = {"critical_count": 1, "non_critical_count": 1, "fix_tasks": [
+		{"check": "pytest", "rule_code": "", "file_path": "a.py"},
+		{"check": "ruff", "rule_code": "E501", "file_path": "b.py"},
+	]}
+	history = [run, run, run]
+	result = track_convergence(history, tolerance=2)
+	assert result.trend == "stable"
+	assert result.recommendation == "escalate"
+
+
+def test_convergence_single_run():
+	"""Single run should return insufficient_data."""
+	from claude_orchestrator.fixer import track_convergence
+
+	history = [{"critical_count": 1, "non_critical_count": 0, "fix_tasks": []}]
+	result = track_convergence(history)
+	assert result.trend == "insufficient_data"
+	assert result.runs_analyzed == 1
+
+
+def test_integration_convergence_triggers_replan(tmp_path: Path):
+	"""Diverging convergence should be usable as replan trigger."""
+	from claude_orchestrator.fixer import track_convergence
+	from claude_orchestrator.replanner import apply_replan
+	from claude_orchestrator.workflow import init_workflow
+
+	init_workflow(str(tmp_path))
+
+	history = [
+		{"critical_count": 1, "non_critical_count": 0, "fix_tasks": []},
+		{"critical_count": 3, "non_critical_count": 0, "fix_tasks": []},
+	]
+	conv = track_convergence(history)
+	assert conv.recommendation == "escalate"
+
+	result = apply_replan(
+		str(tmp_path), "verification_feedback",
+		f"Errors diverging: {conv.trend}",
+		"# Revised Plan\n- Fix regressions\n",
+	)
+	assert result.success is True
+
+
+def test_integration_full_lifecycle(tmp_path: Path):
+	"""Full lifecycle: init -> execute -> replan -> complete."""
+	from claude_orchestrator.replanner import apply_replan
+	from claude_orchestrator.workflow import init_workflow, update_progress
+
+	init_workflow(str(tmp_path))
+	(tmp_path / ".claude-project" / "plan.md").write_text("# Plan\n## Phase 1\n- [ ] Build\n")
+
+	update_progress(str(tmp_path), phase_completed="Discovery", phase_started="Phase 1")
+	result = apply_replan(
+		str(tmp_path), "phase_split", "Split needed",
+		"# Plan\n## Phase 1a\n- [ ] Part A\n## Phase 1b\n- [ ] Part B\n",
+		phases_added=["Phase 1b"], phases_modified=["Phase 1"],
+	)
+	assert result.success
+
+	update_progress(str(tmp_path), phase_completed="Phase 1", phase_started="Phase 1b", commit_hash="aaa111")
+	update_progress(str(tmp_path), phase_completed="Phase 1b", phase_started="Complete", commit_hash="bbb222")
+
+	from claude_orchestrator.workflow import get_workflow_state
+	state = get_workflow_state(str(tmp_path))
+	assert state.current_phase == "Complete"
+	assert state.last_commit == "bbb222"
+
+
+def test_protocol_includes_continuous_improvement():
+	"""protocol.md should include continuous improvement loop."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "### Continuous Improvement Loop" in protocol
+	assert "Discover" in protocol
+	assert "Plan -> Execute -> Verify -> Discover -> Plan" in protocol
+
+
+def test_protocol_includes_output_discipline():
+	"""protocol.md should include output discipline guidance."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "### Output Discipline" in protocol
+	assert "NEVER do" in protocol
+	assert "Context pollution" in protocol
+
+
+def test_protocol_includes_oracle_partitioning():
+	"""protocol.md should include oracle-based task partitioning guidance."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "Oracle-based task partitioning" in protocol
+	assert "failing tests FIRST" in protocol
+
+
+def test_protocol_includes_parallel_decomposition():
+	"""protocol.md should include parallel decomposition guidance."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "### Parallel Decomposition" in protocol
+	assert "Serial collapse" in protocol
+	assert "Spurious parallelism" in protocol
+	assert "Critical path rule" in protocol
 
 
 def test_gotcha_deduplication(tmp_path: Path):

@@ -9,6 +9,7 @@ EXPECTED_TOOLS = {
 	"log_project_decision",
 	"log_project_gotcha",
 	"log_global_learning",
+	"replan",
 	"run_verification",
 	"init_project_workflow",
 	"workflow_progress",
@@ -17,6 +18,7 @@ EXPECTED_TOOLS = {
 	"bootstrap_project",
 	"generate_review_artifact",
 	"suggest_fixes",
+	"track_convergence",
 }
 
 
