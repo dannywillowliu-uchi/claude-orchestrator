@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-02-09T22:26:58.717457",
+  "timestamp": "2026-02-09T22:29:20.369945",
   "overall": {
-    "passed": 34,
-    "total": 34,
+    "passed": 37,
+    "total": 37,
     "rate": 1.0
   },
   "dimensions": {
@@ -37,6 +37,11 @@
       "rate": 1.0
     },
     "self_correction": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "session_reporting": {
       "passed": 3,
       "total": 3,
       "rate": 1.0
@@ -267,6 +272,27 @@
       "id": "sc-03",
       "name": "Circuit breaker triggers on excess issues",
       "dimension": "self_correction",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "sr-01",
+      "name": "Phase complete message formatted correctly",
+      "dimension": "session_reporting",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "sr-02",
+      "name": "Checkpoint message includes risks and approval prompt",
+      "dimension": "session_reporting",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "sr-03",
+      "name": "Blocked message includes reason and intervention prompt",
+      "dimension": "session_reporting",
       "passed": true,
       "error": null
     },

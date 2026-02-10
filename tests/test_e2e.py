@@ -693,6 +693,87 @@ def test_fixer_mypy_errors():
 	assert any(t.file_path == "src/foo.py" for t in result.fix_tasks)
 
 
+def test_session_report_phase_complete():
+	"""Session report should format phase completion correctly."""
+	from claude_orchestrator.session_report import format_phase_complete
+
+	msg = format_phase_complete(
+		"Phase 1 - Core",
+		"my-project",
+		verification_passed=True,
+		verification_summary="5 passed",
+		commit_hash="abc1234def",
+	)
+	assert "[my-project]" in msg
+	assert "Phase 1 - Core" in msg
+	assert "PASS" in msg
+	assert "abc1234" in msg
+
+
+def test_session_report_checkpoint():
+	"""Session report should format checkpoint with risks."""
+	from claude_orchestrator.session_report import format_checkpoint
+
+	msg = format_checkpoint(
+		"Phase 3 - Deploy",
+		"my-project",
+		summary="Deployed to staging",
+		risks=["No rollback plan"],
+		next_phase="Phase 4",
+	)
+	assert "CHECKPOINT" in msg
+	assert "No rollback plan" in msg
+	assert "Awaiting approval" in msg
+
+
+def test_session_report_blocked():
+	"""Session report should format blocked state."""
+	from claude_orchestrator.session_report import format_blocked
+
+	msg = format_blocked(
+		"Phase 2",
+		"my-project",
+		reason="Missing API keys",
+		attempts=3,
+	)
+	assert "BLOCKED" in msg
+	assert "Missing API keys" in msg
+	assert "Human intervention" in msg
+
+
+def test_session_report_session_complete():
+	"""Session report should format session completion."""
+	from claude_orchestrator.session_report import format_session_complete
+
+	msg = format_session_complete(
+		"my-project",
+		phases_completed=["Phase 1", "Phase 2"],
+		session_id="003",
+		total_commits=2,
+	)
+	assert "SESSION COMPLETE" in msg
+	assert "Session 003" in msg
+	assert "2 completed" in msg
+
+
+def test_protocol_references_session_reporting():
+	"""protocol.md should reference session reporting guidance."""
+	from importlib import resources as pkg_resources
+
+	protocol = (
+		pkg_resources.files("claude_orchestrator")
+		.joinpath("protocol.md")
+		.read_text(encoding="utf-8")
+	)
+
+	assert "### Session Reporting" in protocol
+	assert "Phase start" in protocol
+	assert "Phase complete" in protocol
+	assert "Checkpoint" in protocol
+	assert "Blocked" in protocol
+	assert "Session complete" in protocol
+
+
 def test_gotcha_deduplication(tmp_path: Path):
 	"""log_gotcha should skip duplicates instead of appending them again."""
 	claude_md = tmp_path / "CLAUDE.md"

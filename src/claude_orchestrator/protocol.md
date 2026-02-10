@@ -206,6 +206,20 @@ The `/playground` skill generates interactive single-file HTML explorers for vis
 
 Playgrounds are optional. Default to plain text unless the task involves complex relationships, large diffs, or visual design that benefit from interactive exploration.
 
+### Session Reporting
+
+Send structured Telegram notifications at key session events using the `telegram_notify` or `telegram_phase_update` MCP tools:
+
+| Event | When | Content |
+|-------|------|---------|
+| Phase start | Beginning a new phase | Project name, phase name |
+| Phase complete | After verification + commit | Phase name, verification status, commit hash |
+| Checkpoint | Phase has `checkpoint: true` | Summary, risks, next phase, "awaiting approval" |
+| Blocked | Cannot proceed | Phase name, reason, attempt count |
+| Session complete | All phases done or stopping | Phases completed, commit count |
+
+Report only at transitions -- do not send notifications during implementation.
+
 ### Model Tier Guidance
 
 - **Research subagents**: Use Sonnet (`model: "sonnet"`) for cost efficiency

@@ -27,6 +27,11 @@ from claude_orchestrator.fixer import analyze_verification
 from claude_orchestrator.plan_parser import PlanPhase, PlanTree, parse_plan
 from claude_orchestrator.project_memory import log_decision, log_gotcha
 from claude_orchestrator.review import generate_review, list_reviews
+from claude_orchestrator.session_report import (
+	format_blocked,
+	format_checkpoint,
+	format_phase_complete,
+)
 from claude_orchestrator.tool_groups import (
 	ALL_TOOLS,
 	TOOL_GROUPS,
@@ -636,6 +641,51 @@ def _check_circuit_breaker(tmp: Path) -> dict[str, Any]:
 	}
 
 
+# ── Session Reporting ───────────────────────────────────────────────
+
+
+def _check_phase_complete_format(tmp: Path) -> dict[str, Any]:
+	msg = format_phase_complete(
+		"Phase 1", "proj",
+		verification_passed=True,
+		commit_hash="abc1234",
+	)
+	return {
+		"passed": (
+			"[proj]" in msg
+			and "Phase 1" in msg
+			and "PASS" in msg
+			and "abc1234" in msg
+		),
+	}
+
+
+def _check_checkpoint_format(tmp: Path) -> dict[str, Any]:
+	msg = format_checkpoint(
+		"Phase 2", "proj",
+		risks=["Risk A"],
+		next_phase="Phase 3",
+	)
+	return {
+		"passed": (
+			"CHECKPOINT" in msg
+			and "Risk A" in msg
+			and "Awaiting approval" in msg
+		),
+	}
+
+
+def _check_blocked_format(tmp: Path) -> dict[str, Any]:
+	msg = format_blocked("Phase 3", "proj", reason="API key missing")
+	return {
+		"passed": (
+			"BLOCKED" in msg
+			and "API key missing" in msg
+			and "Human intervention" in msg
+		),
+	}
+
+
 # ── Scenario Registry ──────────────────────────────────────────────
 
 SCENARIOS: list[Scenario] = [
@@ -801,6 +851,22 @@ SCENARIOS: list[Scenario] = [
 		"sc-03", "Circuit breaker triggers on excess issues",
 		"self_correction", "verification",
 		_noop_setup, _check_circuit_breaker,
+	),
+	# Session reporting (3)
+	Scenario(
+		"sr-01", "Phase complete message formatted correctly",
+		"session_reporting", "execution",
+		_noop_setup, _check_phase_complete_format,
+	),
+	Scenario(
+		"sr-02", "Checkpoint message includes risks and approval prompt",
+		"session_reporting", "execution",
+		_noop_setup, _check_checkpoint_format,
+	),
+	Scenario(
+		"sr-03", "Blocked message includes reason and intervention prompt",
+		"session_reporting", "execution",
+		_noop_setup, _check_blocked_format,
 	),
 	# Edge cases (3)
 	Scenario(
