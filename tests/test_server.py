@@ -16,6 +16,7 @@ EXPECTED_TOOLS = {
 	"get_phase_tools",
 	"bootstrap_project",
 	"generate_review_artifact",
+	"suggest_fixes",
 }
 
 

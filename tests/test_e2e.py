@@ -75,11 +75,11 @@ def test_full_workflow_lifecycle(tmp_path: Path):
 
 
 def test_mcp_server_starts_with_expected_tools():
-	"""MCP server should start and register exactly 14 tools."""
+	"""MCP server should start and register exactly 15 tools."""
 	from claude_orchestrator.server import mcp
 
 	tools = mcp._tool_manager._tools
-	assert len(tools) == 14, f"Expected 14 tools, got {len(tools)}: {set(tools.keys())}"
+	assert len(tools) == 15, f"Expected 15 tools, got {len(tools)}: {set(tools.keys())}"
 
 	expected = {
 		"health_check",
@@ -89,6 +89,7 @@ def test_mcp_server_starts_with_expected_tools():
 		"run_verification",
 		"init_project_workflow", "workflow_progress", "check_tools",
 		"get_phase_tools", "bootstrap_project", "generate_review_artifact",
+		"suggest_fixes",
 	}
 	assert set(tools.keys()) == expected
 
@@ -220,7 +221,7 @@ def test_protocol_constraints_language():
 	assert "Verification Gate (MANDATORY before every commit)" in protocol
 	assert "Critical" in protocol
 	assert "Non-critical" in protocol
-	assert "Self-correction principle" in protocol
+	assert "Self-correction flow" in protocol
 	assert "Escalation criteria" in protocol
 
 
@@ -608,6 +609,88 @@ def test_plan_parser_empty_plan(tmp_path: Path):
 	assert len(tree.phases) == 0
 	assert tree.flatten() == []
 	assert tree.next_phase("anything") is None
+
+
+def test_fixer_critical_blocks_commit():
+	"""Fixer should block commit when critical issues found."""
+	from claude_orchestrator.fixer import analyze_verification
+
+	checks = [
+		{"name": "pytest", "status": "failed", "output_preview": "FAILED tests/test_foo.py::test_bar"},
+		{"name": "ruff", "status": "passed", "output_preview": ""},
+	]
+	result = analyze_verification(checks)
+	assert result.should_block is True
+	assert result.critical_count >= 1
+	assert result.non_critical_count == 0
+	assert any(t.severity == "critical" for t in result.fix_tasks)
+
+
+def test_fixer_non_critical_allows_commit():
+	"""Fixer should allow commit when only non-critical issues found."""
+	from claude_orchestrator.fixer import analyze_verification
+
+	checks = [
+		{"name": "pytest", "status": "passed", "output_preview": ""},
+		{"name": "ruff", "status": "failed", "output_preview": "src/foo.py:10:1: E501 Line too long"},
+	]
+	result = analyze_verification(checks)
+	assert result.should_block is False
+	assert result.critical_count == 0
+	assert result.non_critical_count >= 1
+	assert any(t.rule_code == "E501" for t in result.fix_tasks)
+
+
+def test_fixer_circuit_breaker():
+	"""Circuit breaker should trigger when too many non-critical issues."""
+	from claude_orchestrator.fixer import analyze_verification
+
+	# Generate 7 unique ruff violations (> threshold of 5)
+	violations = "\n".join(
+		f"src/foo.py:{i}:1: E{500 + i} Some violation {i}"
+		for i in range(7)
+	)
+	checks = [
+		{"name": "ruff", "status": "failed", "output_preview": violations},
+	]
+	result = analyze_verification(checks, circuit_breaker_threshold=5)
+	assert result.circuit_breaker_triggered is True
+	assert result.should_block is False  # non-critical don't block
+	assert "ESCALATE" in result.summary
+
+
+def test_fixer_no_issues():
+	"""Fixer should report no issues when all checks pass."""
+	from claude_orchestrator.fixer import analyze_verification
+
+	checks = [
+		{"name": "pytest", "status": "passed", "output_preview": ""},
+		{"name": "ruff", "status": "passed", "output_preview": ""},
+		{"name": "mypy", "status": "passed", "output_preview": ""},
+	]
+	result = analyze_verification(checks)
+	assert result.should_block is False
+	assert result.critical_count == 0
+	assert result.non_critical_count == 0
+	assert len(result.fix_tasks) == 0
+	assert "No issues" in result.summary
+
+
+def test_fixer_mypy_errors():
+	"""Fixer should extract mypy type errors as critical tasks."""
+	from claude_orchestrator.fixer import analyze_verification
+
+	checks = [
+		{
+			"name": "mypy",
+			"status": "failed",
+			"output_preview": 'src/foo.py:42: error: Incompatible types [assignment]',
+		},
+	]
+	result = analyze_verification(checks)
+	assert result.should_block is True
+	assert result.critical_count >= 1
+	assert any(t.file_path == "src/foo.py" for t in result.fix_tasks)
 
 
 def test_gotcha_deduplication(tmp_path: Path):

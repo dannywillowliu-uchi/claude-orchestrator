@@ -18,8 +18,8 @@ At each phase transition, call `get_phase_tools(phase)` to see which tools are r
 | discovery | `init_project_workflow`, `find_project`, `list_my_projects` | Set up workflow, understand project context |
 | research | `check_tools`, `workflow_progress` | Verify toolchain, track progress |
 | planning | `check_tools`, `workflow_progress`, `log_project_decision` | Plan phases, log architectural decisions |
-| execution | `run_verification`, `workflow_progress`, `update_project_status`, `log_*` | Build, verify, commit, record learnings |
-| verification | `run_verification`, `log_project_gotcha` | Pre-commit gate, log issues |
+| execution | `run_verification`, `suggest_fixes`, `workflow_progress`, `update_project_status`, `log_*` | Build, verify, fix, commit, record learnings |
+| verification | `run_verification`, `suggest_fixes`, `log_project_gotcha` | Pre-commit gate, classify and fix issues |
 
 `health_check` and `get_phase_tools` are available in all phases.
 
@@ -120,13 +120,21 @@ For each phase in the plan:
 | Critical | pytest failures, mypy type errors, bandit security findings | Fix immediately | 3 attempts, then block commit and escalate |
 | Non-critical | ruff style warnings, minor formatting | Log as follow-up task | No block -- commit proceeds, fix in next phase |
 
-**Self-correction principle:** Non-critical issues logged in the current phase may be fixed by subsequent phases. This avoids serialization bottlenecks from blocking on style issues while ensuring critical correctness/security checks remain strict.
+**Self-correction flow:**
+
+1. Run `run_verification` -- if all pass, commit and proceed
+2. If failures, call `suggest_fixes` with the verification JSON output
+3. `suggest_fixes` classifies each issue and returns fix tasks:
+   - **Critical fix tasks** (`should_block: true`): fix immediately, re-verify, up to 3 attempts
+   - **Non-critical fix tasks** (`should_block: false`): log as follow-up, commit proceeds
+4. **Circuit breaker**: if `circuit_breaker_triggered: true` (>5 non-critical issues), escalate -- do NOT attempt mass fixes
 
 **Escalation criteria for blocking issues:**
 - Error requires information not available in context (missing API keys, unclear requirements)
 - Fix attempt changes the semantics of the original task
 - Same error recurs after 3 fix attempts with different strategies
 - Error is in code the current phase did not modify
+- Circuit breaker triggered (>5 non-critical issues in one verification)
 
 When blocked: update `progress.md` Blocked field with specific reason, notify via Telegram, and stop.
 

@@ -30,6 +30,7 @@ TOOL_GROUPS: dict[str, list[str]] = {
 	"execution": [
 		"check_tools",
 		"run_verification",
+		"suggest_fixes",
 		"workflow_progress",
 		"update_project_status",
 		"log_project_decision",
@@ -39,6 +40,7 @@ TOOL_GROUPS: dict[str, list[str]] = {
 	],
 	"verification": [
 		"run_verification",
+		"suggest_fixes",
 		"log_project_gotcha",
 	],
 }

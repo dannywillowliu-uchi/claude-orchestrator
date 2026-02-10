@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-02-09T22:20:57.635228",
+  "timestamp": "2026-02-09T22:26:58.717457",
   "overall": {
-    "passed": 31,
-    "total": 31,
+    "passed": 34,
+    "total": 34,
     "rate": 1.0
   },
   "dimensions": {
@@ -32,6 +32,11 @@
       "rate": 1.0
     },
     "review_artifacts": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "self_correction": {
       "passed": 3,
       "total": 3,
       "rate": 1.0
@@ -241,6 +246,27 @@
       "id": "pp-03",
       "name": "Depth-first navigation works correctly",
       "dimension": "plan_parsing",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "sc-01",
+      "name": "Critical issues block commit",
+      "dimension": "self_correction",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "sc-02",
+      "name": "Non-critical issues allow commit with fix tasks",
+      "dimension": "self_correction",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "sc-03",
+      "name": "Circuit breaker triggers on excess issues",
+      "dimension": "self_correction",
       "passed": true,
       "error": null
     },

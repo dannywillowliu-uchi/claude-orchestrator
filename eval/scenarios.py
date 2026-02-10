@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from claude_orchestrator.bootstrap import detect_project_type, generate_claude_md
+from claude_orchestrator.fixer import analyze_verification
 from claude_orchestrator.plan_parser import PlanPhase, PlanTree, parse_plan
 from claude_orchestrator.project_memory import log_decision, log_gotcha
 from claude_orchestrator.review import generate_review, list_reviews
@@ -586,6 +587,55 @@ def _check_depth_first_navigation(tmp: Path) -> dict[str, Any]:
 	}
 
 
+# ── Self-Correction ─────────────────────────────────────────────────
+
+
+def _check_critical_blocks(tmp: Path) -> dict[str, Any]:
+	checks = [
+		{"name": "pytest", "status": "failed", "output_preview": "FAILED tests/test_x.py::test_y"},
+		{"name": "ruff", "status": "passed", "output_preview": ""},
+	]
+	result = analyze_verification(checks)
+	return {
+		"passed": (
+			result.should_block is True
+			and result.critical_count >= 1
+			and any(t.severity == "critical" for t in result.fix_tasks)
+		),
+	}
+
+
+def _check_non_critical_allows(tmp: Path) -> dict[str, Any]:
+	checks = [
+		{"name": "pytest", "status": "passed", "output_preview": ""},
+		{"name": "ruff", "status": "failed", "output_preview": "src/f.py:1:1: E501 Line too long"},
+	]
+	result = analyze_verification(checks)
+	return {
+		"passed": (
+			result.should_block is False
+			and result.non_critical_count >= 1
+			and any(t.severity == "non-critical" for t in result.fix_tasks)
+		),
+	}
+
+
+def _check_circuit_breaker(tmp: Path) -> dict[str, Any]:
+	violations = "\n".join(
+		f"src/f.py:{i}:1: E{500 + i} Violation {i}" for i in range(7)
+	)
+	checks = [
+		{"name": "ruff", "status": "failed", "output_preview": violations},
+	]
+	result = analyze_verification(checks, circuit_breaker_threshold=5)
+	return {
+		"passed": (
+			result.circuit_breaker_triggered is True
+			and result.should_block is False
+		),
+	}
+
+
 # ── Scenario Registry ──────────────────────────────────────────────
 
 SCENARIOS: list[Scenario] = [
@@ -735,6 +785,22 @@ SCENARIOS: list[Scenario] = [
 		"pp-03", "Depth-first navigation works correctly",
 		"plan_parsing", "planning",
 		_noop_setup, _check_depth_first_navigation,
+	),
+	# Self-correction (3)
+	Scenario(
+		"sc-01", "Critical issues block commit",
+		"self_correction", "verification",
+		_noop_setup, _check_critical_blocks,
+	),
+	Scenario(
+		"sc-02", "Non-critical issues allow commit with fix tasks",
+		"self_correction", "verification",
+		_noop_setup, _check_non_critical_allows,
+	),
+	Scenario(
+		"sc-03", "Circuit breaker triggers on excess issues",
+		"self_correction", "verification",
+		_noop_setup, _check_circuit_breaker,
 	),
 	# Edge cases (3)
 	Scenario(

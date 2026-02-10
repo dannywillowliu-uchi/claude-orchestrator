@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .. import project_memory
 from ..config import Config
+from ..fixer import analyze_verification
 from ..orchestrator.verifier import CheckResult, CheckStatus, Verifier
 
 logger = logging.getLogger(__name__)
@@ -165,4 +166,49 @@ def register_verification_tools(mcp: FastMCP, config: Config) -> None:
 				"Consider running /verify-by-consensus for multi-agent review of these changes"
 			)
 
+		return json.dumps(response, indent=2)
+
+	@mcp.tool()
+	async def suggest_fixes(
+		verification_json: str,
+		circuit_breaker_threshold: int = 5,
+	) -> str:
+		"""
+		Analyze verification results and suggest corrective fix tasks.
+
+		Call this after run_verification when it reports failures. Classifies
+		issues as critical (block commit) or non-critical (create fix tasks,
+		commit proceeds). Includes a circuit breaker that triggers when too
+		many non-critical issues accumulate.
+
+		Args:
+			verification_json: JSON string from run_verification output
+			circuit_breaker_threshold: Max non-critical tasks before escalation (default 5)
+		"""
+		try:
+			verification = json.loads(verification_json)
+		except json.JSONDecodeError:
+			return json.dumps({"error": "Invalid JSON input"})
+
+		checks = verification.get("checks", [])
+		result = analyze_verification(checks, circuit_breaker_threshold)
+
+		response = {
+			"should_block": result.should_block,
+			"circuit_breaker_triggered": result.circuit_breaker_triggered,
+			"critical_count": result.critical_count,
+			"non_critical_count": result.non_critical_count,
+			"summary": result.summary,
+			"fix_tasks": [
+				{
+					"check": t.check_name,
+					"severity": t.severity,
+					"description": t.description,
+					"file_path": t.file_path,
+					"rule_code": t.rule_code,
+					"action": t.suggested_action,
+				}
+				for t in result.fix_tasks
+			],
+		}
 		return json.dumps(response, indent=2)

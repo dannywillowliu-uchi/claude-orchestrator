@@ -296,7 +296,7 @@ _MCP_TOOL_NAMES = {
 	"log_global_learning", "run_verification",
 	"init_project_workflow", "workflow_progress", "check_tools",
 	"get_phase_tools", "bootstrap_project",
-	"generate_review_artifact",
+	"generate_review_artifact", "suggest_fixes",
 }
 
 
