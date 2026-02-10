@@ -1,0 +1,217 @@
+{
+  "timestamp": "2026-02-09T21:43:03.427838",
+  "overall": {
+    "passed": 25,
+    "total": 25,
+    "rate": 1.0
+  },
+  "dimensions": {
+    "bootstrap": {
+      "passed": 6,
+      "total": 6,
+      "rate": 1.0
+    },
+    "context_recovery": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "edge_cases": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "project_memory": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0
+    },
+    "tool_disclosure": {
+      "passed": 5,
+      "total": 5,
+      "rate": 1.0
+    },
+    "workflow_lifecycle": {
+      "passed": 5,
+      "total": 5,
+      "rate": 1.0
+    }
+  },
+  "scenarios": [
+    {
+      "id": "wf-01",
+      "name": "Init creates workflow structure",
+      "dimension": "workflow_lifecycle",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "wf-02",
+      "name": "Init is idempotent",
+      "dimension": "workflow_lifecycle",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "wf-03",
+      "name": "Phase transition updates state",
+      "dimension": "workflow_lifecycle",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "wf-04",
+      "name": "Commit hash tracked across phases",
+      "dimension": "workflow_lifecycle",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "wf-05",
+      "name": "Phase history appended correctly",
+      "dimension": "workflow_lifecycle",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "bs-01",
+      "name": "Detect Python project with uv",
+      "dimension": "bootstrap",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "bs-02",
+      "name": "Detect Node project with TypeScript",
+      "dimension": "bootstrap",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "bs-03",
+      "name": "Detect yarn package manager",
+      "dimension": "bootstrap",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "bs-04",
+      "name": "Unknown project handled gracefully",
+      "dimension": "bootstrap",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "bs-05",
+      "name": "CLAUDE.md generated with correct commands",
+      "dimension": "bootstrap",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "bs-06",
+      "name": "Existing CLAUDE.md not overwritten",
+      "dimension": "bootstrap",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "td-01",
+      "name": "All registered tools appear in groups",
+      "dimension": "tool_disclosure",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "td-02",
+      "name": "Discovery phase has correct tools",
+      "dimension": "tool_disclosure",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "td-03",
+      "name": "Execution phase has correct tools",
+      "dimension": "tool_disclosure",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "td-04",
+      "name": "Unknown phase returns all tools",
+      "dimension": "tool_disclosure",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "td-05",
+      "name": "Always-tools present in every phase",
+      "dimension": "tool_disclosure",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "pm-01",
+      "name": "Gotcha logged to CLAUDE.md",
+      "dimension": "project_memory",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "pm-02",
+      "name": "Duplicate gotcha deduplicated",
+      "dimension": "project_memory",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "pm-03",
+      "name": "Decision logged to CLAUDE.md",
+      "dimension": "project_memory",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "cr-01",
+      "name": "Complex progress.md parsed correctly",
+      "dimension": "context_recovery",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "cr-02",
+      "name": "Nonexistent workflow returns empty state",
+      "dimension": "context_recovery",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "cr-03",
+      "name": "Fresh workflow has correct initial state",
+      "dimension": "context_recovery",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ec-01",
+      "name": "Init on deeply nested path",
+      "dimension": "edge_cases",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ec-02",
+      "name": "Progress update without workflow fails gracefully",
+      "dimension": "edge_cases",
+      "passed": true,
+      "error": null
+    },
+    {
+      "id": "ec-03",
+      "name": "Detect Rust project",
+      "dimension": "edge_cases",
+      "passed": true,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,586 @@
+"""Eval scenarios for the workflow system.
+
+Each scenario is a structured test case with:
+- setup: creates the test state in a temp directory
+- check: validates the expected outcome
+- dimension: what aspect of the system this tests
+
+Dimensions:
+- workflow_lifecycle: init, phase transitions, progress tracking
+- bootstrap: project type detection, CLAUDE.md generation
+- tool_disclosure: phase-tool mapping correctness
+- verification_gate: error tiers, gotcha derivation
+- project_memory: decisions, gotchas, deduplication
+- context_recovery: state reconstruction from progress.md
+- edge_cases: unknown types, missing files, malformed input
+
+To add a new scenario: append a Scenario to SCENARIOS list with
+a unique id, setup function, and check function.
+"""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from claude_orchestrator.bootstrap import detect_project_type, generate_claude_md
+from claude_orchestrator.project_memory import log_decision, log_gotcha
+from claude_orchestrator.tool_groups import (
+	ALL_TOOLS,
+	TOOL_GROUPS,
+	VALID_PHASES,
+	get_tools_for_phase,
+)
+from claude_orchestrator.workflow import (
+	get_workflow_state,
+	init_workflow,
+	update_progress,
+)
+
+
+@dataclass
+class Scenario:
+	"""A single eval scenario."""
+
+	id: str
+	name: str
+	dimension: str
+	phase: str  # which workflow phase this is relevant to
+	setup: Callable[[Path], None]
+	check: Callable[[Path], dict[str, Any]]
+	tags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ScenarioResult:
+	"""Result of running a scenario."""
+
+	id: str
+	name: str
+	dimension: str
+	passed: bool
+	details: dict[str, Any] = field(default_factory=dict)
+	error: str = ""
+
+
+def _noop_setup(tmp: Path) -> None:
+	pass
+
+
+# ── Workflow Lifecycle ──────────────────────────────────────────────
+
+
+def _check_init_creates_structure(tmp: Path) -> dict[str, Any]:
+	result = init_workflow(str(tmp))
+	wdir = tmp / ".claude-project"
+	return {
+		"passed": (
+			result["success"]
+			and wdir.exists()
+			and (wdir / "discover.md").exists()
+			and (wdir / "plan.md").exists()
+			and (wdir / "progress.md").exists()
+			and (wdir / "research").is_dir()
+		),
+		"created": result.get("created"),
+	}
+
+
+def _check_init_idempotent(tmp: Path) -> dict[str, Any]:
+	init_workflow(str(tmp))
+	r2 = init_workflow(str(tmp))
+	return {
+		"passed": r2["success"] and len(r2["skipped"]) == 3,
+		"skipped": r2.get("skipped"),
+	}
+
+
+def _setup_workflow_for_transitions(tmp: Path) -> None:
+	init_workflow(str(tmp))
+
+
+def _check_phase_transition(tmp: Path) -> dict[str, Any]:
+	result = update_progress(
+		str(tmp),
+		phase_completed="Discovery",
+		phase_started="Research",
+		summary="Done discovering.",
+	)
+	state = get_workflow_state(str(tmp))
+	return {
+		"passed": (
+			result["success"]
+			and state.current_phase == "Research"
+		),
+		"current_phase": state.current_phase,
+	}
+
+
+def _check_commit_hash_tracking(tmp: Path) -> dict[str, Any]:
+	update_progress(str(tmp), phase_completed="Discovery", phase_started="Phase 1")
+	update_progress(
+		str(tmp),
+		phase_completed="Phase 1",
+		phase_started="Phase 2",
+		commit_hash="abc1234",
+	)
+	state = get_workflow_state(str(tmp))
+	return {
+		"passed": state.last_commit == "abc1234",
+		"last_commit": state.last_commit,
+	}
+
+
+def _check_phase_history_appended(tmp: Path) -> dict[str, Any]:
+	update_progress(str(tmp), phase_completed="Discovery", phase_started="Research")
+	update_progress(str(tmp), phase_completed="Research", phase_started="Phase 1")
+	content = (tmp / ".claude-project" / "progress.md").read_text(encoding="utf-8")
+	return {
+		"passed": "Discovery" in content and "Research" in content,
+	}
+
+
+# ── Bootstrap ───────────────────────────────────────────────────────
+
+
+def _setup_python_project(tmp: Path) -> None:
+	(tmp / "pyproject.toml").write_text(
+		"[project]\nname='test'\n\n[tool.pytest.ini_options]\n\n[tool.ruff]\n",
+		encoding="utf-8",
+	)
+	(tmp / "uv.lock").write_text("", encoding="utf-8")
+	(tmp / "src").mkdir()
+
+
+def _check_python_detection(tmp: Path) -> dict[str, Any]:
+	profile = detect_project_type(str(tmp))
+	return {
+		"passed": (
+			profile.project_type == "python"
+			and profile.package_manager == "uv"
+			and "uv run pytest" in profile.test_command
+		),
+		"project_type": profile.project_type,
+		"package_manager": profile.package_manager,
+	}
+
+
+def _setup_node_project(tmp: Path) -> None:
+	(tmp / "package.json").write_text('{"name":"test"}', encoding="utf-8")
+	(tmp / "tsconfig.json").write_text("{}", encoding="utf-8")
+
+
+def _check_node_detection(tmp: Path) -> dict[str, Any]:
+	profile = detect_project_type(str(tmp))
+	return {
+		"passed": (
+			profile.project_type == "node"
+			and profile.package_manager == "npm"
+			and "npm test" in profile.test_command
+			and profile.detected_tools.get("typescript") is True
+		),
+		"project_type": profile.project_type,
+	}
+
+
+def _setup_yarn_project(tmp: Path) -> None:
+	(tmp / "package.json").write_text('{"name":"test"}', encoding="utf-8")
+	(tmp / "yarn.lock").write_text("", encoding="utf-8")
+
+
+def _check_yarn_detection(tmp: Path) -> dict[str, Any]:
+	profile = detect_project_type(str(tmp))
+	return {
+		"passed": profile.package_manager == "yarn",
+		"package_manager": profile.package_manager,
+	}
+
+
+def _check_unknown_project(tmp: Path) -> dict[str, Any]:
+	profile = detect_project_type(str(tmp))
+	return {
+		"passed": (
+			profile.project_type == "unknown"
+			and profile.verification_commands == []
+		),
+		"project_type": profile.project_type,
+	}
+
+
+def _check_claude_md_generation(tmp: Path) -> dict[str, Any]:
+	profile = detect_project_type(str(tmp))
+	content = generate_claude_md(profile, "test-project")
+	return {
+		"passed": (
+			"uv run pytest" in content
+			and "uv run ruff" in content
+			and "test-project" in content
+		),
+	}
+
+
+def _setup_existing_claude_md(tmp: Path) -> None:
+	(tmp / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+	(tmp / "CLAUDE.md").write_text("# Custom\n", encoding="utf-8")
+
+
+def _check_existing_claude_md_preserved(tmp: Path) -> dict[str, Any]:
+	profile = detect_project_type(str(tmp))
+	return {
+		"passed": profile.has_claude_md is True,
+	}
+
+
+# ── Tool Disclosure ─────────────────────────────────────────────────
+
+
+def _check_all_tools_in_groups(tmp: Path) -> dict[str, Any]:
+	# Import registered tools
+	from claude_orchestrator.server import mcp
+	registered = set(mcp._tool_manager._tools.keys())
+	return {
+		"passed": registered == ALL_TOOLS,
+		"registered": sorted(registered),
+		"in_groups": sorted(ALL_TOOLS),
+	}
+
+
+def _check_discovery_tools(tmp: Path) -> dict[str, Any]:
+	tools = get_tools_for_phase("discovery")
+	return {
+		"passed": (
+			"init_project_workflow" in tools
+			and "bootstrap_project" in tools
+			and "run_verification" not in tools
+		),
+		"tools": tools,
+	}
+
+
+def _check_execution_tools(tmp: Path) -> dict[str, Any]:
+	tools = get_tools_for_phase("execution")
+	return {
+		"passed": (
+			"run_verification" in tools
+			and "workflow_progress" in tools
+			and "log_project_gotcha" in tools
+		),
+		"tools": tools,
+	}
+
+
+def _check_unknown_phase_fallback(tmp: Path) -> dict[str, Any]:
+	tools = get_tools_for_phase("nonexistent")
+	return {
+		"passed": set(tools) == ALL_TOOLS,
+	}
+
+
+def _check_always_tools_present(tmp: Path) -> dict[str, Any]:
+	results = {}
+	for phase in VALID_PHASES:
+		tools = get_tools_for_phase(phase)
+		for always_tool in TOOL_GROUPS["always"]:
+			if always_tool not in tools:
+				results[f"{phase}_missing_{always_tool}"] = False
+	return {
+		"passed": len(results) == 0,
+		"failures": results,
+	}
+
+
+# ── Project Memory ──────────────────────────────────────────────────
+
+
+def _setup_project_with_gotchas(tmp: Path) -> None:
+	(tmp / "CLAUDE.md").write_text(
+		"# Project\n\n## Gotchas & Learnings\n\n## Other\n",
+		encoding="utf-8",
+	)
+
+
+def _check_gotcha_logging(tmp: Path) -> dict[str, Any]:
+	result = log_gotcha(str(tmp), "dont", "Use eval() on user input")
+	content = (tmp / "CLAUDE.md").read_text(encoding="utf-8")
+	return {
+		"passed": (
+			result["success"]
+			and "eval()" in content
+		),
+	}
+
+
+def _check_gotcha_dedup(tmp: Path) -> dict[str, Any]:
+	log_gotcha(str(tmp), "dont", "Duplicate entry")
+	r2 = log_gotcha(str(tmp), "dont", "Duplicate entry")
+	content = (tmp / "CLAUDE.md").read_text(encoding="utf-8")
+	return {
+		"passed": (
+			"skipped" in r2.get("message", "")
+			and content.count("Duplicate entry") == 1
+		),
+	}
+
+
+def _setup_project_with_decisions(tmp: Path) -> None:
+	(tmp / "CLAUDE.md").write_text(
+		"# Project\n\n## Decisions Log\n"
+		"| Date | Decision | Rationale | Alternatives |\n"
+		"| ---- | -------- | --------- | ------------ |\n\n"
+		"## Other\n",
+		encoding="utf-8",
+	)
+
+
+def _check_decision_logging(tmp: Path) -> dict[str, Any]:
+	result = log_decision(str(tmp), "Use SQLite", "Simplest option", "Postgres")
+	content = (tmp / "CLAUDE.md").read_text(encoding="utf-8")
+	return {
+		"passed": (
+			result["success"]
+			and "SQLite" in content
+			and "Simplest option" in content
+		),
+	}
+
+
+# ── Context Recovery ────────────────────────────────────────────────
+
+
+def _setup_complex_progress(tmp: Path) -> None:
+	wdir = tmp / ".claude-project"
+	wdir.mkdir(parents=True)
+	(wdir / "discover.md").write_text("# Discovery\n")
+	(wdir / "plan.md").write_text("# Plan\n")
+	(wdir / "progress.md").write_text(
+		"# Progress\n\n"
+		"## Current State\n"
+		"Phase: Phase 3 - Deployment\n"
+		"Active Task: Configure CI\n"
+		"Blocked: Waiting for keys\n"
+		"Last Commit: def5678\n\n"
+		"## Next Up\n- Deploy\n\n"
+		"## Phase History\n",
+		encoding="utf-8",
+	)
+	research = wdir / "research"
+	research.mkdir()
+	(research / "api-design.md").write_text("# API\n")
+	(research / "auth.md").write_text("# Auth\n")
+
+
+def _check_state_parsing(tmp: Path) -> dict[str, Any]:
+	state = get_workflow_state(str(tmp))
+	return {
+		"passed": (
+			state.exists
+			and state.current_phase == "Phase 3 - Deployment"
+			and state.active_task == "Configure CI"
+			and state.blocked == "Waiting for keys"
+			and state.last_commit == "def5678"
+			and state.has_discover
+			and state.has_plan
+			and "api-design" in state.research_topics
+			and "auth" in state.research_topics
+		),
+		"phase": state.current_phase,
+		"research_topics": state.research_topics,
+	}
+
+
+def _check_nonexistent_workflow(tmp: Path) -> dict[str, Any]:
+	state = get_workflow_state(str(tmp))
+	return {
+		"passed": (
+			not state.exists
+			and state.current_phase == ""
+		),
+	}
+
+
+def _setup_fresh_workflow(tmp: Path) -> None:
+	init_workflow(str(tmp))
+
+
+def _check_fresh_state(tmp: Path) -> dict[str, Any]:
+	state = get_workflow_state(str(tmp))
+	return {
+		"passed": (
+			state.exists
+			and state.current_phase == "Not started"
+			and state.active_task == "None"
+			and state.blocked == "None"
+		),
+	}
+
+
+# ── Edge Cases ──────────────────────────────────────────────────────
+
+
+def _check_init_on_missing_dir(tmp: Path) -> dict[str, Any]:
+	target = tmp / "nonexistent" / "deep" / "path"
+	result = init_workflow(str(target))
+	return {
+		"passed": result["success"] and (target / ".claude-project").exists(),
+	}
+
+
+def _check_progress_without_workflow(tmp: Path) -> dict[str, Any]:
+	result = update_progress(str(tmp), phase_completed="X", phase_started="Y")
+	return {
+		"passed": not result["success"] and "error" in result,
+	}
+
+
+def _setup_rust_project(tmp: Path) -> None:
+	(tmp / "Cargo.toml").write_text('[package]\nname = "test"\n', encoding="utf-8")
+
+
+def _check_rust_detection(tmp: Path) -> dict[str, Any]:
+	profile = detect_project_type(str(tmp))
+	return {
+		"passed": (
+			profile.project_type == "rust"
+			and profile.package_manager == "cargo"
+			and "cargo test" in profile.test_command
+		),
+		"project_type": profile.project_type,
+	}
+
+
+# ── Scenario Registry ──────────────────────────────────────────────
+
+SCENARIOS: list[Scenario] = [
+	# Workflow lifecycle (5)
+	Scenario(
+		"wf-01", "Init creates workflow structure",
+		"workflow_lifecycle", "discovery",
+		_noop_setup, _check_init_creates_structure,
+	),
+	Scenario(
+		"wf-02", "Init is idempotent",
+		"workflow_lifecycle", "discovery",
+		_noop_setup, _check_init_idempotent,
+	),
+	Scenario(
+		"wf-03", "Phase transition updates state",
+		"workflow_lifecycle", "execution",
+		_setup_workflow_for_transitions, _check_phase_transition,
+	),
+	Scenario(
+		"wf-04", "Commit hash tracked across phases",
+		"workflow_lifecycle", "execution",
+		_setup_workflow_for_transitions, _check_commit_hash_tracking,
+	),
+	Scenario(
+		"wf-05", "Phase history appended correctly",
+		"workflow_lifecycle", "execution",
+		_setup_workflow_for_transitions, _check_phase_history_appended,
+	),
+	# Bootstrap (6)
+	Scenario(
+		"bs-01", "Detect Python project with uv",
+		"bootstrap", "discovery",
+		_setup_python_project, _check_python_detection,
+	),
+	Scenario(
+		"bs-02", "Detect Node project with TypeScript",
+		"bootstrap", "discovery",
+		_setup_node_project, _check_node_detection,
+	),
+	Scenario(
+		"bs-03", "Detect yarn package manager",
+		"bootstrap", "discovery",
+		_setup_yarn_project, _check_yarn_detection,
+	),
+	Scenario(
+		"bs-04", "Unknown project handled gracefully",
+		"bootstrap", "discovery",
+		_noop_setup, _check_unknown_project,
+	),
+	Scenario(
+		"bs-05", "CLAUDE.md generated with correct commands",
+		"bootstrap", "discovery",
+		_setup_python_project, _check_claude_md_generation,
+	),
+	Scenario(
+		"bs-06", "Existing CLAUDE.md not overwritten",
+		"bootstrap", "discovery",
+		_setup_existing_claude_md, _check_existing_claude_md_preserved,
+	),
+	# Tool disclosure (4)
+	Scenario(
+		"td-01", "All registered tools appear in groups",
+		"tool_disclosure", "any",
+		_noop_setup, _check_all_tools_in_groups,
+	),
+	Scenario(
+		"td-02", "Discovery phase has correct tools",
+		"tool_disclosure", "discovery",
+		_noop_setup, _check_discovery_tools,
+	),
+	Scenario(
+		"td-03", "Execution phase has correct tools",
+		"tool_disclosure", "execution",
+		_noop_setup, _check_execution_tools,
+	),
+	Scenario(
+		"td-04", "Unknown phase returns all tools",
+		"tool_disclosure", "any",
+		_noop_setup, _check_unknown_phase_fallback,
+	),
+	Scenario(
+		"td-05", "Always-tools present in every phase",
+		"tool_disclosure", "any",
+		_noop_setup, _check_always_tools_present,
+	),
+	# Project memory (3)
+	Scenario(
+		"pm-01", "Gotcha logged to CLAUDE.md",
+		"project_memory", "execution",
+		_setup_project_with_gotchas, _check_gotcha_logging,
+	),
+	Scenario(
+		"pm-02", "Duplicate gotcha deduplicated",
+		"project_memory", "execution",
+		_setup_project_with_gotchas, _check_gotcha_dedup,
+	),
+	Scenario(
+		"pm-03", "Decision logged to CLAUDE.md",
+		"project_memory", "execution",
+		_setup_project_with_decisions, _check_decision_logging,
+	),
+	# Context recovery (3)
+	Scenario(
+		"cr-01", "Complex progress.md parsed correctly",
+		"context_recovery", "any",
+		_setup_complex_progress, _check_state_parsing,
+	),
+	Scenario(
+		"cr-02", "Nonexistent workflow returns empty state",
+		"context_recovery", "any",
+		_noop_setup, _check_nonexistent_workflow,
+	),
+	Scenario(
+		"cr-03", "Fresh workflow has correct initial state",
+		"context_recovery", "discovery",
+		_setup_fresh_workflow, _check_fresh_state,
+	),
+	# Edge cases (3)
+	Scenario(
+		"ec-01", "Init on deeply nested path",
+		"edge_cases", "discovery",
+		_noop_setup, _check_init_on_missing_dir,
+	),
+	Scenario(
+		"ec-02", "Progress update without workflow fails gracefully",
+		"edge_cases", "execution",
+		_noop_setup, _check_progress_without_workflow,
+	),
+	Scenario(
+		"ec-03", "Detect Rust project",
+		"edge_cases", "discovery",
+		_setup_rust_project, _check_rust_detection,
+	),
+]
+
+assert len(SCENARIOS) >= 20, f"Expected >= 20 scenarios, got {len(SCENARIOS)}"
